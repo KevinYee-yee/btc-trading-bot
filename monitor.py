@@ -32,6 +32,9 @@ MACD_SIGNAL     = 9
 PORTFOLIO_FILE  = "paper_portfolio.json"
 TRADE_LOG_FILE  = "trade_log.csv"
 
+# 強制測試模式：環境變數 FORCE_TEST=buy 或 FORCE_TEST=sell
+FORCE_TEST      = os.environ.get("FORCE_TEST", "")
+
 # Telegram（從環境變數讀取，由 GitHub Secrets 注入）
 TG_TOKEN   = os.environ.get("TELEGRAM_TOKEN", "")
 TG_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
@@ -181,6 +184,39 @@ def run():
     print(f"  近期低點（停損線）：${recent_low:,.2f}")
 
     action_taken = False
+
+    # ── 強制測試模式 ────────────────────────
+    if FORCE_TEST == "buy" and portfolio["position"] == 0:
+        near_lower   = True
+        recent_cross = True
+        print("\n  🧪 強制測試模式：強制觸發買入訊號")
+    elif FORCE_TEST == "sell" and portfolio["position"] > 0:
+        print("\n  🧪 強制測試模式：強制觸發賣出訊號")
+        qty         = portfolio["position"]
+        entry_price = portfolio["entry_price"]
+        exit_reason = "強制測試賣出"
+        sell_value  = qty * price * (1 - COMMISSION)
+        cost        = qty * entry_price * (1 + COMMISSION)
+        pnl         = sell_value - cost
+        pnl_pct     = pnl / cost * 100
+        portfolio["capital"] += sell_value
+        portfolio["position"]    = 0.0
+        portfolio["entry_price"] = 0.0
+        portfolio["entry_time"]  = ""
+        portfolio["total_trades"] += 1
+        portfolio["total_pnl"]    += pnl
+        if pnl > 0: portfolio["wins"] += 1
+        else:        portfolio["losses"] += 1
+        log_trade("SELL", price, qty, pnl_pct, exit_reason, portfolio)
+        sheets_post({"type":"trade","time":datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"),"action":"SELL","price":str(price),"qty":str(qty),"pnl_pct":f"{pnl_pct:+.2f}%","capital_after":str(portfolio["capital"]),"reason":exit_reason,"portfolio":portfolio,"bb_upper":str(bb_upper),"bb_lower":str(bb_lower)})
+        icon = "🟢" if pnl > 0 else "🔴"
+        notify(f"{icon} <b>出場訊號｜BTC 策略A（測試）</b>\n原因：{exit_reason}\n進場：${entry_price:,.2f} → 出場：${price:,.2f}\n損益：<b>{pnl_pct:+.2f}%（{pnl:+.2f} USDT）</b>")
+        print(f"  {icon} 強制賣出完成  損益：{pnl_pct:+.2f}%")
+        portfolio["last_candle"] = candle_time
+        save_portfolio(portfolio)
+        print_status(portfolio, latest)
+        sheets_post({"type":"monitor_log","time":datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"),"price":str(price),"bb_upper":str(bb_upper),"bb_lower":str(bb_lower),"recent_low":str(recent_low),"cond_bb":"🧪","cond_macd":"🧪","signal":"強制賣出（測試）","account_status":"空倉","portfolio":portfolio})
+        return
 
     # ── 有倉位：檢查出場 ────────────────────
     if portfolio["position"] > 0:

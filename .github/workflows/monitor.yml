@@ -4,7 +4,12 @@ on:
   schedule:
     # 【測試模式】每 30 分鐘一次 — 測完記得改回 4H
     - cron: "*/30 * * * *"
-  workflow_dispatch:    # 允許手動觸發（測試用）
+  workflow_dispatch:
+    inputs:
+      force_test:
+        description: '強制測試模式 (buy / sell / 留空=正常)'
+        required: false
+        default: ''
 
 jobs:
   monitor:
@@ -29,6 +34,7 @@ jobs:
           TELEGRAM_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GS_WEBHOOK:       ${{ secrets.GS_WEBHOOK }}
+          FORCE_TEST:       ${{ github.event.inputs.force_test }}
         run: python monitor.py
 
       - name: Commit updated portfolio state
