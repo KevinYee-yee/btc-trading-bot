@@ -1,0 +1,36 @@
+name: 策略A 紙上交易監測
+
+on:
+  schedule:
+    # 每 4 小時執行一次（對齊 4H K 線收盤：UTC 0/4/8/12/16/20 點）
+    - cron: "5 0,4,8,12,16,20 * * *"
+  workflow_dispatch:    # 允許手動觸發（測試用）
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # 允許寫入 paper_portfolio.json 和 trade_log.csv
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install ccxt pandas numpy
+
+      - name: Run strategy monitor
+        run: python monitor.py
+
+      - name: Commit updated portfolio state
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add paper_portfolio.json trade_log.csv
+          git diff --cached --quiet || git commit -m "📊 $(date -u '+%Y-%m-%d %H:%M UTC') 自動更新帳戶狀態"
+          git push

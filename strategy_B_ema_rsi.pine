@@ -1,0 +1,124 @@
+// =============================================================
+// 策略 B：順勢突破流 — 雙 EMA + RSI 趨勢跟隨現貨策略
+// 版本：v1.0  |  作者：Kevin  |  建立：2026-06-14
+// 平台：TradingView Pine Script v5
+// 適用：BTC/ETH 現貨，建議時框 4H 或 1D
+// 風控：僅多頭現貨，禁止放空與槓桿
+// =============================================================
+//
+// ★ Webhook Alert JSON 格式（串接 Binance API 用）
+// 在 TradingView Alert → Message 欄位貼入以下內容：
+//
+// 買入時：
+// {"symbol":"BTCUSDT","side":"BUY","type":"MARKET","quantity":"0.001","strategy":"EMA_RSI_v1","price":"{{close}}"}
+//
+// 賣出時：
+// {"symbol":"BTCUSDT","side":"SELL","type":"MARKET","quantity":"0.001","strategy":"EMA_RSI_v1","price":"{{close}}"}
+//
+// ★ 注意：quantity 請依實際資金規模自行調整
+// =============================================================
+
+//@version=5
+strategy(
+     title       = "雙 EMA + RSI 趨勢跟隨現貨策略 v1",
+     shorttitle  = "EMA+RSI",
+     overlay     = true,
+     initial_capital     = 1000,
+     default_qty_type    = strategy.percent_of_equity,
+     default_qty_value   = 100,
+     commission_type     = strategy.commission.percent,
+     commission_value    = 0.1    // Binance 現貨手續費 0.1%
+)
+
+// ─────────────────────────────────────────────
+// 參數輸入
+// ─────────────────────────────────────────────
+emaFast     = input.int(20,  title="短期 EMA 週期",         minval=1)
+emaSlow     = input.int(50,  title="長期 EMA 週期",         minval=1)
+
+rsiLength   = input.int(14,  title="RSI 週期",              minval=1)
+rsiMin      = input.int(50,  title="RSI 進場下限（多頭確認）", minval=40, maxval=60)
+rsiMax      = input.int(70,  title="RSI 進場上限（避免超買）", minval=65, maxval=80)
+
+trailPerc   = input.float(3.0, title="移動停損百分比（%）",   minval=0.5, step=0.5)
+useEmaCross = input.bool(true,  title="均線死叉時出場（否則僅用移動停損）")
+
+// ─────────────────────────────────────────────
+// 指標計算
+// ─────────────────────────────────────────────
+emaFastLine = ta.ema(close, emaFast)
+emaSlowLine = ta.ema(close, emaSlow)
+rsiValue    = ta.rsi(close, rsiLength)
+
+// 黃金交叉：短期 EMA 向上穿越長期 EMA
+emaCross    = ta.crossover(emaFastLine, emaSlowLine)
+// 死亡交叉：短期 EMA 向下跌破長期 EMA
+emaDeadCross = ta.crossunder(emaFastLine, emaSlowLine)
+
+// ─────────────────────────────────────────────
+// 繪製均線
+// ─────────────────────────────────────────────
+emaFastPlot = plot(emaFastLine, color=color.new(color.orange, 0), linewidth=2, title="EMA 短期")
+emaSlowPlot = plot(emaSlowLine, color=color.new(color.purple, 0), linewidth=2, title="EMA 長期")
+
+// 均線多頭區間填色
+fill(emaFastPlot, emaSlowPlot,
+     color = emaFastLine > emaSlowLine
+             ? color.new(color.green, 85)
+             : color.new(color.red, 85),
+     title="均線多空填色")
+
+// ─────────────────────────────────────────────
+// 進場條件（多頭，現貨買入）
+// ─────────────────────────────────────────────
+// 條件 1：短期 EMA 向上突破長期 EMA（趨勢翻多）
+// 條件 2：RSI 在 50–70 區間（確認多頭動能，但未超買）
+longCondition = emaCross and (rsiValue >= rsiMin) and (rsiValue <= rsiMax)
+
+// ─────────────────────────────────────────────
+// 出場條件
+// ─────────────────────────────────────────────
+// 均線死叉：趨勢反轉，全額平倉
+exitByEmaCross = useEmaCross and emaDeadCross
+
+// ─────────────────────────────────────────────
+// 策略執行
+// ─────────────────────────────────────────────
+if longCondition
+    strategy.entry("Buy", strategy.long, comment="EMA金叉+RSI確認")
+
+// 移動停損：追蹤最高價，回撤 X% 後出場
+strategy.exit("TrailStop", from_entry="Buy",
+              trail_points  = strategy.position_avg_price * trailPerc / 100,
+              trail_offset  = strategy.position_avg_price * trailPerc / 100)
+
+// 均線死叉強制出場
+if exitByEmaCross
+    strategy.close("Buy", comment="EMA死叉出場")
+
+// ─────────────────────────────────────────────
+// RSI 超買警示線（繪製在副圖，需搭配 RSI 指標使用）
+// ─────────────────────────────────────────────
+// 注意：RSI 繪圖需在 overlay=false 的面板，這裡僅做文字提示
+// 請另外在 TradingView 手動添加內建 RSI 指標輔助觀察
+
+// ─────────────────────────────────────────────
+// 訊號標記
+// ─────────────────────────────────────────────
+plotshape(longCondition, style=shape.triangleup,   location=location.belowbar,
+          color=color.green, size=size.normal, title="買入訊號")
+plotshape(exitByEmaCross and strategy.position_size > 0,
+          style=shape.triangledown, location=location.abovebar,
+          color=color.red, size=size.normal, title="死叉出場")
+
+// ─────────────────────────────────────────────
+// 均線狀態標籤（顯示當前趨勢）
+// ─────────────────────────────────────────────
+var label statusLabel = na
+if barstate.islast
+    label.delete(statusLabel)
+    trend = emaFastLine > emaSlowLine ? "多頭趨勢 ▲" : "空頭趨勢 ▼"
+    statusLabel := label.new(bar_index, high,
+         text  = trend + "\nRSI: " + str.tostring(math.round(rsiValue, 1)),
+         color = emaFastLine > emaSlowLine ? color.green : color.red,
+         textcolor = color.white, size=size.small)

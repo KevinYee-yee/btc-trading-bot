@@ -1,0 +1,118 @@
+// =============================================================
+// 策略 A：逆勢反轉流 — 布林通道 + MACD 現貨策略
+// 版本：v1.0  |  作者：Kevin  |  建立：2026-06-14
+// 平台：TradingView Pine Script v5
+// 適用：BTC/ETH 現貨，建議時框 4H 或 1D
+// 風控：僅多頭現貨，禁止放空與槓桿
+// =============================================================
+//
+// ★ Webhook Alert JSON 格式（串接 Binance API 用）
+// 在 TradingView Alert → Message 欄位貼入以下內容：
+//
+// 買入時：
+// {"symbol":"BTCUSDT","side":"BUY","type":"MARKET","quantity":"0.001","strategy":"BB_MACD_v1","price":"{{close}}"}
+//
+// 賣出時：
+// {"symbol":"BTCUSDT","side":"SELL","type":"MARKET","quantity":"0.001","strategy":"BB_MACD_v1","price":"{{close}}"}
+//
+// ★ 注意：quantity 請依實際資金規模自行調整
+// =============================================================
+
+//@version=5
+strategy(
+     title       = "BB + MACD 逆勢反轉現貨策略 v1",
+     shorttitle  = "BB+MACD",
+     overlay     = true,
+     initial_capital     = 1000,
+     default_qty_type    = strategy.percent_of_equity,
+     default_qty_value   = 100,
+     commission_type     = strategy.commission.percent,
+     commission_value    = 0.1    // Binance 現貨手續費 0.1%
+)
+
+// ─────────────────────────────────────────────
+// 參數輸入（使用者可在 TradingView 右側面板調整）
+// ─────────────────────────────────────────────
+bbLength    = input.int(20,    title="布林通道長度",     minval=5)
+bbMult      = input.float(2.0, title="布林通道標準差倍數", minval=0.5, step=0.1)
+
+macdFast    = input.int(12,   title="MACD 快線週期",    minval=1)
+macdSlow    = input.int(26,   title="MACD 慢線週期",    minval=1)
+macdSignal  = input.int(9,    title="MACD 訊號線週期",  minval=1)
+
+slLookback  = input.int(3,    title="停損回看 K 線數（最低點）", minval=1, maxval=20)
+trailPerc   = input.float(3.0, title="移動停損百分比（%）",       minval=0.5, step=0.5)
+useTrail    = input.bool(false, title="啟用移動停損（否則用固定低點停損）")
+
+// ─────────────────────────────────────────────
+// 布林通道計算
+// ─────────────────────────────────────────────
+bbBasis = ta.sma(close, bbLength)
+bbDev   = bbMult * ta.stdev(close, bbLength)
+bbUpper = bbBasis + bbDev
+bbLower = bbBasis - bbDev
+
+// 繪製布林通道
+plot(bbUpper, color=color.new(color.blue, 30),  linewidth=1, title="布林上軌")
+plot(bbBasis, color=color.new(color.gray, 50),  linewidth=1, title="布林中軌")
+plot(bbLower, color=color.new(color.blue, 30),  linewidth=1, title="布林下軌")
+fill(plot(bbUpper, display=display.none), plot(bbLower, display=display.none),
+     color=color.new(color.blue, 90), title="布林通道填色")
+
+// ─────────────────────────────────────────────
+// MACD 計算
+// ─────────────────────────────────────────────
+[macdLine, signalLine, histLine] = ta.macd(close, macdFast, macdSlow, macdSignal)
+
+// 黃金交叉：MACD 線從下方穿越訊號線
+macdGoldenCross = ta.crossover(macdLine, signalLine)
+// 死亡交叉：MACD 線從上方跌破訊號線
+macdDeadCross   = ta.crossunder(macdLine, signalLine)
+
+// ─────────────────────────────────────────────
+// 進場條件（多頭，現貨買入）
+// ─────────────────────────────────────────────
+// 條件 1：收盤價跌破布林下軌（超賣區間）
+priceBelowLower = close < bbLower
+// 條件 2：MACD 出現黃金交叉（動能由負轉正）
+longCondition = priceBelowLower and macdGoldenCross
+
+// ─────────────────────────────────────────────
+// 停利條件：收盤價觸及布林上軌
+// ─────────────────────────────────────────────
+tpCondition = close >= bbUpper
+
+// ─────────────────────────────────────────────
+// 固定停損：進場前 N 根 K 線的最低點
+// ─────────────────────────────────────────────
+entryLow = ta.lowest(low, slLookback)   // 動態追蹤最近 N 根最低點
+slCondition = close < entryLow[1]       // 跌破進場時的近期低點
+
+// ─────────────────────────────────────────────
+// 策略執行
+// ─────────────────────────────────────────────
+if longCondition
+    strategy.entry("Buy", strategy.long, comment="BB破下軌+MACD金叉")
+
+// 移動停損出場
+if useTrail
+    strategy.exit("TrailStop", from_entry="Buy",
+                  trail_points  = close * trailPerc / 100,
+                  trail_offset  = close * trailPerc / 100)
+
+// 停利出場
+if tpCondition
+    strategy.close("Buy", comment="觸及布林上軌停利")
+
+// 固定停損出場（若未啟用移動停損）
+if not useTrail and slCondition
+    strategy.close("Buy", comment="跌破近期低點停損")
+
+// ─────────────────────────────────────────────
+// 訊號標記（方便視覺確認）
+// ─────────────────────────────────────────────
+plotshape(longCondition, style=shape.triangleup,   location=location.belowbar,
+          color=color.green, size=size.small, title="買入訊號")
+plotshape(tpCondition and strategy.position_size > 0,
+          style=shape.triangledown, location=location.abovebar,
+          color=color.red, size=size.small, title="停利訊號")
