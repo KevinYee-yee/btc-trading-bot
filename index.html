@@ -120,6 +120,16 @@
   <div class="section-label">帳戶概覽</div>
   <div class="cards">
     <div class="card">
+      <div class="card-label">總資產（USDT）</div>
+      <div class="card-value white" id="c-total">—</div>
+      <div class="card-sub" id="c-total-sub">初始 $1,000</div>
+    </div>
+    <div class="card">
+      <div class="card-label">現金餘額</div>
+      <div class="card-value white" id="c-cash">—</div>
+      <div class="card-sub" id="c-cash-sub">可用 USDT</div>
+    </div>
+    <div class="card">
       <div class="card-label">累計報酬</div>
       <div class="card-value white" id="c-return">—</div>
     </div>
@@ -189,6 +199,22 @@ function render(data) {
   const retN   = parseFloat(retStr);
   const pnlStr = d["累計已實現損益"] || "$0.00";
   const pnlN   = parseFloat(String(pnlStr).replace(/[$,]/g,""));
+
+  // 總資產 = 初始 $1000 × (1 + 報酬率)
+  const totalAssets = (1000 * (1 + retN / 100)).toFixed(2);
+  const totalFmt    = "$" + parseFloat(totalAssets).toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  document.getElementById("c-total").textContent   = totalFmt;
+  document.getElementById("c-total").className     = "card-value " + (retN >= 0 ? "green" : "red");
+  document.getElementById("c-total-sub").textContent = retN >= 0
+    ? "+" + retStr.replace("+","") + " 較初始"
+    : retStr + " 較初始";
+
+  // 現金餘額
+  const cashRaw = d["現金餘額"];
+  const isHoldingCash = !cashRaw || cashRaw === "—";
+  document.getElementById("c-cash").textContent  = isHoldingCash ? "持倉中" : cashRaw;
+  document.getElementById("c-cash").className    = "card-value " + (isHoldingCash ? "gold" : "white");
+  document.getElementById("c-cash-sub").textContent = isHoldingCash ? "資金已買入 BTC" : "可用 USDT";
 
   document.getElementById("c-return").textContent = retStr;
   document.getElementById("c-return").className   = "card-value " + (retN >= 0 ? "green" : "red");
