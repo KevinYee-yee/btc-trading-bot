@@ -56,10 +56,25 @@ def sheets_post(payload):
     if not GS_WEBHOOK:
         return
     try:
+        # Google Apps Script 會 302 redirect，需要先 POST 拿到 Location，再 GET echo URL
+        class StopRedirect(urllib.request.HTTPRedirectHandler):
+            def http_error_302(self, req, fp, code, msg, headers):
+                raise urllib.error.HTTPError(req.full_url, code, msg, headers, fp)
+
         data = json.dumps(payload).encode("utf-8")
         req  = urllib.request.Request(GS_WEBHOOK, data=data,
-               headers={"Content-Type": "application/json"})
-        urllib.request.urlopen(req, timeout=15)
+                                      headers={"Content-Type": "application/json"})
+        opener = urllib.request.build_opener(StopRedirect())
+        try:
+            opener.open(req, timeout=15)
+        except urllib.error.HTTPError as e:
+            if e.code == 302:
+                loc = e.headers.get("Location", "")
+                if loc:
+                    urllib.request.urlopen(loc, timeout=15)
+                    print("  ✅ Google Sheets 已更新")
+            else:
+                raise
     except Exception as e:
         print(f"  ⚠️ Google Sheets 更新失敗：{e}")
 
