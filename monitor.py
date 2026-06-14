@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 # 設定
 # ─────────────────────────────────────────────
 SYMBOL          = "BTC/USDT"
-TIMEFRAME       = "4h"
+TIMEFRAME       = "15m"   # 測試模式：改回正式請換成 "4h"
 INITIAL_CAPITAL = 1000.0      # 模擬起始資金（USDT）
 COMMISSION      = 0.001       # 手續費 0.1%
 SL_LOOKBACK     = 3           # 停損回看 K 線數
