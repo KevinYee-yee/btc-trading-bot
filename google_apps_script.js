@@ -6,6 +6,42 @@
 
 const SHEET_ID = "12ADUQmL9ZqoobVN4zRzhpR_rXRk2cKs4procf1IifSU";
 
+// doGet：提供 JSON 資料給監測網頁使用
+function doGet(e) {
+  const ss   = SpreadsheetApp.openById(SHEET_ID);
+  const dash = ss.getSheetByName("📊 儀表板");
+  const logs = ss.getSheetByName("📡 監測日誌");
+  const trad = ss.getSheetByName("📋 交易紀錄");
+
+  // 儀表板 key-value
+  const dashData = {};
+  if (dash && dash.getLastRow() > 0) {
+    const vals = dash.getRange(1, 1, dash.getLastRow(), 2).getValues();
+    vals.forEach(r => { if (r[0]) dashData[r[0]] = r[1]; });
+  }
+
+  // 最近 20 筆監測日誌
+  const logRows = [];
+  if (logs && logs.getLastRow() > 1) {
+    const last = logs.getLastRow();
+    const start = Math.max(2, last - 19);
+    const data  = logs.getRange(start, 1, last - start + 1, 9).getValues();
+    data.reverse().forEach(r => logRows.push(r));
+  }
+
+  // 最近 10 筆交易
+  const tradeRows = [];
+  if (trad && trad.getLastRow() > 1) {
+    const last = trad.getLastRow();
+    const start = Math.max(2, last - 9);
+    const data  = trad.getRange(start, 1, last - start + 1, 7).getValues();
+    data.reverse().forEach(r => tradeRows.push(r));
+  }
+
+  const output = JSON.stringify({ dashboard: dashData, logs: logRows, trades: tradeRows });
+  return ContentService.createTextOutput(output).setMimeType(ContentService.MimeType.JSON);
+}
+
 function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);

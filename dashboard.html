@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BTC 策略A 監測儀表板</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0f0f0f; color: #e0e0e0; font-family: -apple-system, BlinkMacSystemFont, "SF Pro", sans-serif; padding: 16px; }
+  h1 { font-size: 18px; color: #f0b429; letter-spacing: 1px; margin-bottom: 4px; }
+  .subtitle { font-size: 12px; color: #666; margin-bottom: 20px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 10px; padding: 14px; }
+  .card-label { font-size: 11px; color: #888; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .card-value { font-size: 22px; font-weight: 700; color: #fff; }
+  .card-value.green { color: #4caf50; }
+  .card-value.red   { color: #f44336; }
+  .card-value.gold  { color: #f0b429; }
+  .card-value.small { font-size: 15px; }
+  .section-title { font-size: 13px; color: #888; margin-bottom: 8px; border-bottom: 1px solid #2a2a2a; padding-bottom: 6px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 20px; }
+  th { background: #1e1e1e; color: #888; padding: 8px 6px; text-align: left; font-weight: 500; }
+  td { padding: 7px 6px; border-bottom: 1px solid #1a1a1a; color: #ccc; }
+  tr:hover td { background: #1e1e1e; }
+  .buy  { color: #4caf50; font-weight: 600; }
+  .sell-win  { color: #4caf50; }
+  .sell-loss { color: #f44336; }
+  .signal-yes { color: #f0b429; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+  .badge-wait { background: #1e1e1e; color: #888; }
+  .badge-signal { background: #3d2e00; color: #f0b429; }
+  #refresh-info { font-size: 11px; color: #555; text-align: right; margin-top: 8px; }
+  #status-bar { font-size: 12px; color: #555; margin-bottom: 12px; }
+  .loader { color: #555; font-size: 14px; padding: 40px; text-align: center; }
+</style>
+</head>
+<body>
+
+<h1>⚡ BTC 策略A 監測儀表板</h1>
+<div class="subtitle">布林通道 + MACD 逆勢反轉｜自動更新每 30 秒</div>
+<div id="status-bar">載入中...</div>
+
+<div id="main" class="loader">正在連線 Google Sheets...</div>
+
+<div id="refresh-info"></div>
+
+<script>
+const GS_URL = "https://script.google.com/macros/s/AKfycbzNqaCegsgO9ggl75tWI-lm1jOgqdxj4RUR1y9rETvtQptTHELh_mcU2H_0GK4tPc6L/exec";
+
+function fmt(n) {
+  const num = parseFloat(n);
+  if (isNaN(num)) return n || "—";
+  return "$" + num.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
+
+function colorClass(val) {
+  const n = parseFloat(String(val).replace("%",""));
+  return n >= 0 ? "green" : "red";
+}
+
+async function fetchData() {
+  try {
+    const resp = await fetch(GS_URL, { redirect: "follow" });
+    return await resp.json();
+  } catch(e) {
+    return null;
+  }
+}
+
+function render(data) {
+  if (!data) {
+    document.getElementById("main").innerHTML = '<div class="loader">⚠️ 無法連線，30 秒後重試...</div>';
+    return;
+  }
+
+  const d  = data.dashboard || {};
+  const logs   = data.logs   || [];
+  const trades = data.trades || [];
+
+  const lastUpdate  = d["最後更新"] || "—";
+  const btcPrice    = d["BTC 現價"] || "—";
+  const bbUpper     = d["布林上軌"] || "—";
+  const bbLower     = d["布林下軌"] || "—";
+  const position    = d["持倉狀態"] || "空倉中";
+  const cash        = d["現金餘額"] || "—";
+  const unrealized  = d["未實現損益"] || "—";
+  const totalReturn = d["累計報酬"] || "0%";
+  const tradeCount  = d["總交易次數"] || 0;
+  const winLoss     = d["勝 / 敗"] || "—";
+  const winRate     = d["勝率"] || "—";
+  const totalPnl    = d["累計已實現損益"] || "—";
+
+  const retNum = parseFloat(String(totalReturn).replace("%",""));
+  const retClass = retNum >= 0 ? "green" : "red";
+
+  document.getElementById("status-bar").textContent = `最後更新：${lastUpdate} UTC`;
+
+  let html = `
+  <div class="grid">
+    <div class="card">
+      <div class="card-label">BTC 現價</div>
+      <div class="card-value gold">${btcPrice}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">持倉狀態</div>
+      <div class="card-value small">${position}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">累計報酬</div>
+      <div class="card-value ${retClass}">${totalReturn}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">累計已實現損益</div>
+      <div class="card-value ${retClass}">${totalPnl}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">布林上軌</div>
+      <div class="card-value small">${bbUpper}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">布林下軌</div>
+      <div class="card-value small">${bbLower}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">交易次數</div>
+      <div class="card-value">${tradeCount}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">勝率</div>
+      <div class="card-value">${winRate}</div>
+    </div>
+  </div>
+
+  <div class="section-title">📡 最近監測紀錄</div>
+  <table>
+    <thead>
+      <tr><th>時間(UTC)</th><th>BTC 價格</th><th>布林下軌</th><th>下軌</th><th>MACD</th><th>訊號</th><th>帳戶</th></tr>
+    </thead>
+    <tbody>`;
+
+  logs.forEach(r => {
+    const sig = r[7] && r[7] !== "無訊號"
+      ? `<span class="badge badge-signal">${r[7]}</span>`
+      : `<span class="badge badge-wait">待機</span>`;
+    html += `<tr>
+      <td>${r[0]}</td>
+      <td>$${parseFloat(r[1]||0).toLocaleString()}</td>
+      <td>$${parseFloat(r[3]||0).toLocaleString()}</td>
+      <td>${r[5]}</td>
+      <td>${r[6]}</td>
+      <td>${sig}</td>
+      <td>${r[8]}</td>
+    </tr>`;
+  });
+
+  html += `</tbody></table>`;
+
+  if (trades.length > 0) {
+    html += `<div class="section-title">📋 交易紀錄</div>
+    <table>
+      <thead><tr><th>時間</th><th>動作</th><th>價格</th><th>損益%</th><th>餘額</th><th>原因</th></tr></thead>
+      <tbody>`;
+    trades.forEach(r => {
+      const action = r[1] === "BUY" ? '<span class="buy">買入</span>' : '<span class="sell-win">賣出</span>';
+      const pnl = r[4];
+      const pnlClass = String(pnl).startsWith("+") ? "sell-win" : "sell-loss";
+      html += `<tr>
+        <td>${r[0]}</td>
+        <td>${action}</td>
+        <td>$${parseFloat(r[2]||0).toLocaleString()}</td>
+        <td class="${pnlClass}">${pnl || "—"}</td>
+        <td>$${parseFloat(r[5]||0).toFixed(2)}</td>
+        <td>${r[6]}</td>
+      </tr>`;
+    });
+    html += `</tbody></table>`;
+  }
+
+  document.getElementById("main").innerHTML = html;
+}
+
+async function refresh() {
+  const data = await fetchData();
+  render(data);
+  const now = new Date().toLocaleTimeString("zh-TW");
+  document.getElementById("refresh-info").textContent = `頁面自動更新｜上次刷新：${now}`;
+}
+
+refresh();
+setInterval(refresh, 30000);
+</script>
+</body>
+</html>
