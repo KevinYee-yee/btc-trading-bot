@@ -10,6 +10,8 @@ import numpy as np
 import json
 import csv
 import os
+import urllib.request
+import urllib.parse
 from datetime import datetime, timezone
 
 # ─────────────────────────────────────────────
@@ -30,9 +32,23 @@ MACD_SIGNAL     = 9
 PORTFOLIO_FILE  = "paper_portfolio.json"
 TRADE_LOG_FILE  = "trade_log.csv"
 
+# Telegram（從環境變數讀取，由 GitHub Secrets 注入）
+TG_TOKEN   = os.environ.get("TELEGRAM_TOKEN", "")
+TG_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+
 # ─────────────────────────────────────────────
 # 虛擬帳戶：讀取 / 初始化
 # ─────────────────────────────────────────────
+def notify(msg):
+    if not TG_TOKEN or not TG_CHAT_ID:
+        return
+    try:
+        url  = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
+        data = urllib.parse.urlencode({"chat_id": TG_CHAT_ID, "text": msg, "parse_mode": "HTML"}).encode()
+        urllib.request.urlopen(url, data, timeout=10)
+    except Exception as e:
+        print(f"  ⚠️ Telegram 通知失敗：{e}")
+
 def load_portfolio():
     if os.path.exists(PORTFOLIO_FILE):
         with open(PORTFOLIO_FILE) as f:
@@ -169,6 +185,13 @@ def run():
             print(f"\n  {icon} 出場！{exit_reason}")
             print(f"     進場：${entry_price:,.2f}  →  出場：${price:,.2f}")
             print(f"     損益：{pnl_pct:+.2f}%  ({pnl:+.2f} USDT)")
+            notify(
+                f"{icon} <b>出場訊號｜BTC 策略A</b>\n"
+                f"原因：{exit_reason}\n"
+                f"進場：${entry_price:,.2f} → 出場：${price:,.2f}\n"
+                f"損益：<b>{pnl_pct:+.2f}%（{pnl:+.2f} USDT）</b>\n"
+                f"帳戶餘額：${portfolio['capital']:,.2f} USDT"
+            )
             action_taken = True
 
     # ── 無倉位：檢查進場 ────────────────────
@@ -182,6 +205,13 @@ def run():
             log_trade("BUY", price, qty, None, "BB下軌+MACD黃金交叉", portfolio)
             print(f"\n  🔔 進場！布林下軌 + MACD 黃金交叉")
             print(f"     買入 {qty:.6f} BTC @ ${price:,.2f}")
+            notify(
+                f"🔔 <b>進場訊號｜BTC 策略A</b>\n"
+                f"條件：布林下軌 + MACD 黃金交叉\n"
+                f"進場價：<b>${price:,.2f}</b>\n"
+                f"模擬買入：{qty:.6f} BTC\n"
+                f"停損線：${recent_low:,.2f}｜停利：布林上軌 ${bb_upper:,.2f}"
+            )
             action_taken = True
         else:
             cond1 = "✅" if near_lower   else "❌"

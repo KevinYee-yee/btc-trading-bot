@@ -25,6 +25,9 @@ jobs:
         run: pip install ccxt pandas numpy
 
       - name: Run strategy monitor
+        env:
+          TELEGRAM_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python monitor.py
 
       - name: Commit updated portfolio state
