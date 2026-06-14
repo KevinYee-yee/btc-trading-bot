@@ -76,8 +76,8 @@ def log_trade(action, price, qty, pnl_pct, reason, portfolio):
 # 抓數據 + 計算指標
 # ─────────────────────────────────────────────
 def fetch_and_calc():
-    exchange = ccxt.binance({"enableRateLimit": True})
-    # 抓最近 100 根就夠算指標
+    # 使用 OKX：公開 API 不受地區限制（Binance 封鎖美國 IP）
+    exchange = ccxt.okx({"enableRateLimit": True})
     ohlcv = exchange.fetch_ohlcv(SYMBOL, TIMEFRAME, limit=100)
     df = pd.DataFrame(ohlcv, columns=["ts", "open", "high", "low", "close", "volume"])
     df["ts"] = pd.to_datetime(df["ts"], unit="ms", utc=True)
