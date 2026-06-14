@@ -37,7 +37,7 @@ TG_TOKEN   = os.environ.get("TELEGRAM_TOKEN", "")
 TG_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 # Google Sheets Web App URL（部署後填入）
-GS_WEBHOOK = os.environ.get("GS_WEBHOOK", "")
+GS_WEBHOOK = os.environ.get("GS_WEBHOOK", "https://script.google.com/macros/s/AKfycbywcYNXYwDN6Z70F0-1nxVj6f3nzqyyoiugO_Mkiy5LPjXbFb5RP126d79VgqjnWlwJ/exec")
 
 # ─────────────────────────────────────────────
 # 虛擬帳戶：讀取 / 初始化
