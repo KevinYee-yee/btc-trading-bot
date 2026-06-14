@@ -28,6 +28,7 @@ jobs:
         env:
           TELEGRAM_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GS_WEBHOOK:       ${{ secrets.GS_WEBHOOK }}
         run: python monitor.py
 
       - name: Commit updated portfolio state

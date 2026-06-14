@@ -36,6 +36,9 @@ TRADE_LOG_FILE  = "trade_log.csv"
 TG_TOKEN   = os.environ.get("TELEGRAM_TOKEN", "")
 TG_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
+# Google Sheets Web App URL（部署後填入）
+GS_WEBHOOK = os.environ.get("GS_WEBHOOK", "")
+
 # ─────────────────────────────────────────────
 # 虛擬帳戶：讀取 / 初始化
 # ─────────────────────────────────────────────
@@ -48,6 +51,17 @@ def notify(msg):
         urllib.request.urlopen(url, data, timeout=10)
     except Exception as e:
         print(f"  ⚠️ Telegram 通知失敗：{e}")
+
+def sheets_post(payload):
+    if not GS_WEBHOOK:
+        return
+    try:
+        data = json.dumps(payload).encode("utf-8")
+        req  = urllib.request.Request(GS_WEBHOOK, data=data,
+               headers={"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=15)
+    except Exception as e:
+        print(f"  ⚠️ Google Sheets 更新失敗：{e}")
 
 def load_portfolio():
     if os.path.exists(PORTFOLIO_FILE):
@@ -182,6 +196,19 @@ def run():
                 portfolio["losses"] += 1
                 icon = "🔴"
             log_trade("SELL", price, qty, pnl_pct, exit_reason, portfolio)
+            sheets_post({
+                "type":          "trade",
+                "time":          datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"),
+                "action":        "SELL",
+                "price":         str(price),
+                "qty":           str(qty),
+                "pnl_pct":       f"{pnl_pct:+.2f}%",
+                "capital_after": str(portfolio["capital"]),
+                "reason":        exit_reason,
+                "portfolio":     portfolio,
+                "bb_upper":      str(bb_upper),
+                "bb_lower":      str(bb_lower),
+            })
             print(f"\n  {icon} 出場！{exit_reason}")
             print(f"     進場：${entry_price:,.2f}  →  出場：${price:,.2f}")
             print(f"     損益：{pnl_pct:+.2f}%  ({pnl:+.2f} USDT)")
@@ -203,6 +230,19 @@ def run():
             portfolio["entry_time"]  = candle_time
             portfolio["capital"]     = 0.0
             log_trade("BUY", price, qty, None, "BB下軌+MACD黃金交叉", portfolio)
+            sheets_post({
+                "type":          "trade",
+                "time":          datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"),
+                "action":        "BUY",
+                "price":         str(price),
+                "qty":           str(qty),
+                "pnl_pct":       "",
+                "capital_after": "0",
+                "reason":        "BB下軌+MACD黃金交叉",
+                "portfolio":     portfolio,
+                "bb_upper":      str(bb_upper),
+                "bb_lower":      str(bb_lower),
+            })
             print(f"\n  🔔 進場！布林下軌 + MACD 黃金交叉")
             print(f"     買入 {qty:.6f} BTC @ ${price:,.2f}")
             notify(
@@ -221,6 +261,21 @@ def run():
     portfolio["last_candle"] = candle_time
     save_portfolio(portfolio)
     print_status(portfolio, latest)
+
+    # ── Google Sheets 監測日誌 ───────────────
+    sheets_post({
+        "type":           "monitor_log",
+        "time":           datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"),
+        "price":          str(price),
+        "bb_upper":       str(bb_upper),
+        "bb_lower":       str(bb_lower),
+        "recent_low":     str(recent_low),
+        "cond_bb":        "✅" if near_lower   else "❌",
+        "cond_macd":      "✅" if recent_cross else "❌",
+        "signal":         "進場" if (near_lower and recent_cross) else "無訊號",
+        "account_status": f"持倉" if portfolio["position"] > 0 else "空倉",
+        "portfolio":      portfolio,
+    })
 
 def print_status(portfolio, latest):
     price = latest["close"]
