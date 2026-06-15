@@ -44,4 +44,5 @@ jobs:
           git add paper_portfolio.json
           git add trade_log.csv 2>/dev/null || true
           git diff --cached --quiet || git commit -m "📊 $(date -u '+%Y-%m-%d %H:%M UTC') 自動更新帳戶狀態"
+          git pull --rebase origin main
           git push

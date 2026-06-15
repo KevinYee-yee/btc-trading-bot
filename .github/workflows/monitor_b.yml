@@ -41,4 +41,5 @@ jobs:
           git add paper_portfolio_b.json
           git add trade_log_b.csv 2>/dev/null || true
           git diff --cached --quiet || git commit -m "📊B $(date -u '+%Y-%m-%d %H:%M UTC') 策略B更新"
+          git pull --rebase origin main
           git push
