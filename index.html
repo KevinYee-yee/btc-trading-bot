@@ -171,6 +171,14 @@
 <script>
 const GS_URL = "https://script.google.com/macros/s/AKfycbywcYNXYwDN6Z70F0-1nxVj6f3nzqyyoiugO_Mkiy5LPjXbFb5RP126d79VgqjnWlwJ/exec";
 
+function toTW(utcStr) {
+  if (!utcStr) return "—";
+  try {
+    const d = new Date(String(utcStr).replace(" ", "T") + (String(utcStr).includes("Z") ? "" : "Z"));
+    return d.toLocaleString("zh-TW", { timeZone: "Asia/Taipei", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  } catch(e) { return utcStr; }
+}
+
 function render(data) {
   const d      = data.dashboard || {};
   const logs   = data.logs      || [];
@@ -178,7 +186,7 @@ function render(data) {
 
   document.getElementById("btc-price").textContent = d["BTC 現價"] || "—";
   document.getElementById("last-update").textContent =
-    "資料時間：" + (d["最後更新"] || "—") + " UTC";
+    "資料時間：" + toTW(d["最後更新"]) + " 台灣時間";
 
   const pos = d["持倉狀態"] || "空倉中";
   const isHolding = pos !== "空倉中";
@@ -235,7 +243,7 @@ function render(data) {
       return `<div class="log-item">
         <div class="log-icon">${hasSignal ? "⚡" : "·"}</div>
         <div class="log-body">
-          <div class="log-time">${r[0]}</div>
+          <div class="log-time">${toTW(r[0])}</div>
           <div class="log-row">
             <span class="log-price">${priceFmt}</span>
             <span class="log-badge ${hasSignal ? "badge-signal" : "badge-wait"}">${hasSignal ? r[7] : "待機"}</span>
@@ -262,7 +270,7 @@ function render(data) {
       return `<div class="trade-item">
         <div class="trade-header">
           <span class="trade-badge ${badgeCls}">${isBuy ? "買入" : "賣出"}</span>
-          <span class="trade-time">${r[0]}</span>
+          <span class="trade-time">${toTW(r[0])}</span>
         </div>
         <div class="trade-row">
           <span class="trade-price">${priceFmt}</span>
