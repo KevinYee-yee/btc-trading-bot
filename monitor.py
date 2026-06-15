@@ -28,6 +28,11 @@ BB_MULT         = 2.0
 MACD_FAST       = 12
 MACD_SLOW       = 26
 MACD_SIGNAL_P   = 9
+RSI_PERIOD      = 9    # 策略B：RSI週期（改14→9，更靈敏）
+RSI_BUY         = 40   # 策略B：買進門檻（改35→40）
+RSI_SELL        = 62   # 策略B：賣出門檻（改65→62）
+EMA_FAST        = 13   # 策略C：快線（改9→13）
+EMA_SLOW        = 48   # 策略C：慢線（改21→48）
 
 # 策略唯一鍵（含標的前綴）
 ASSET     = "ETH" if "ETH" in SYMBOL else "BTC"
@@ -37,12 +42,12 @@ PORTFOLIO_FILE  = "paper_portfolio.json" if STRAT_KEY == "A" else f"paper_portfo
 TRADE_LOG_FILE  = "trade_log.csv"        if STRAT_KEY == "A" else f"trade_log_{STRAT_KEY.lower()}.csv"
 
 STRATEGY_LABEL = {
-    "A":     "BTC 策略A：布林+MACD",
-    "B":     "BTC 策略B：RSI超賣",
-    "C":     "BTC 策略C：EMA交叉",
-    "D":     "BTC 策略D：MACD零軸",
-    "ETH_B": "ETH 策略B：RSI超賣",
-    "ETH_C": "ETH 策略C：EMA交叉",
+    "A":     "BTC 策略A：布林+MACD+RSI",
+    "B":     "BTC 策略B：RSI(9)<40",
+    "C":     "BTC 策略C：EMA13/48",
+    "D":     "BTC 策略D：MACD信號線",
+    "ETH_B": "ETH 策略B：RSI(9)<40",
+    "ETH_C": "ETH 策略C：EMA13/48",
 }
 
 FORCE_TEST = os.environ.get("FORCE_TEST", "")
@@ -135,15 +140,19 @@ def fetch_and_calc():
     df["macd_sig"]  = df["macd"].ewm(span=MACD_SIGNAL_P, adjust=False).mean()
     df["macd_cross"] = (df["macd"] > df["macd_sig"]) & (df["macd"].shift(1) <= df["macd_sig"].shift(1))
 
-    # RSI（策略 B 用）
+    # RSI(9)（策略 A 確認 + 策略 B 用）
     delta       = df["close"].diff()
-    gain        = delta.clip(lower=0).rolling(14).mean()
-    loss        = (-delta.clip(upper=0)).rolling(14).mean()
+    gain        = delta.clip(lower=0).rolling(RSI_PERIOD).mean()
+    loss        = (-delta.clip(upper=0)).rolling(RSI_PERIOD).mean()
     df["rsi"]   = 100 - (100 / (1 + gain / loss))
 
-    # EMA 快慢線（策略 C 用）
-    df["ema9"]  = df["close"].ewm(span=9,  adjust=False).mean()
-    df["ema21"] = df["close"].ewm(span=21, adjust=False).mean()
+    # EMA 13/48（策略 C 用）
+    df["ema_f"] = df["close"].ewm(span=EMA_FAST, adjust=False).mean()
+    df["ema_s"] = df["close"].ewm(span=EMA_SLOW, adjust=False).mean()
+
+    # MACD 信號線穿越（策略 D 用）
+    df["macd_sig_cross"] = (df["macd"] > df["macd_sig"]) & (df["macd"].shift(1) <= df["macd_sig"].shift(1))
+    df["macd_sig_death"] = (df["macd"] < df["macd_sig"]) & (df["macd"].shift(1) >= df["macd_sig"].shift(1))
 
     df.dropna(inplace=True)
     return df
@@ -158,23 +167,26 @@ def get_entry_signal(df, latest):
     if STRATEGY == "A":
         near_lower   = price <= latest["bb_lower"] * 1.005
         recent_cross = df["macd_cross"].iloc[-(MACD_WINDOW + 2):-1].any()
-        return near_lower and recent_cross, "✅" if near_lower else "❌", "✅" if recent_cross else "❌"
+        rsi_ok       = latest["rsi"] < 45
+        c1 = "✅" if near_lower else "❌"
+        c2 = f"MACD {'✅' if recent_cross else '❌'} RSI {latest['rsi']:.0f}{'✅' if rsi_ok else '❌'}"
+        return near_lower and recent_cross and rsi_ok, c1, c2
 
     elif STRATEGY == "B":
         rsi = latest["rsi"]
-        return rsi < 35, f"RSI {rsi:.1f}", "✅" if rsi < 35 else "❌"
+        return rsi < RSI_BUY, f"RSI(9) {rsi:.1f}", f"{'✅' if rsi < RSI_BUY else '❌'} <{RSI_BUY}"
 
     elif STRATEGY == "C":
-        ema9_now, ema21_now   = df["ema9"].iloc[-2], df["ema21"].iloc[-2]
-        ema9_prev, ema21_prev = df["ema9"].iloc[-3], df["ema21"].iloc[-3]
-        cross_up = (ema9_now > ema21_now) and (ema9_prev <= ema21_prev)
-        return cross_up, f"EMA9 {ema9_now:.0f}", f"EMA21 {ema21_now:.0f}"
+        ef_now,  es_now  = df["ema_f"].iloc[-2], df["ema_s"].iloc[-2]
+        ef_prev, es_prev = df["ema_f"].iloc[-3], df["ema_s"].iloc[-3]
+        cross_up = (ef_now > es_now) and (ef_prev <= es_prev)
+        return cross_up, f"EMA{EMA_FAST} {ef_now:.0f}", f"EMA{EMA_SLOW} {es_now:.0f}"
 
     elif STRATEGY == "D":
-        macd_now  = df["macd"].iloc[-2]
-        macd_prev = df["macd"].iloc[-3]
-        cross_up  = (macd_now > 0) and (macd_prev <= 0)
-        return cross_up, f"MACD {macd_now:.1f}", "✅零軸上" if macd_now > 0 else "❌零軸下"
+        macd_now = df["macd"].iloc[-2]
+        sig_cross = df["macd_sig_cross"].iloc[-2]
+        above_zero = macd_now > 0
+        return sig_cross and above_zero, f"MACD {macd_now:.1f}", f"{'✅' if sig_cross else '❌'}信號穿越+{'✅' if above_zero else '❌'}零軸上"
 
     return False, "—", "—"
 
@@ -195,21 +207,20 @@ def get_exit_reason(df, latest, portfolio):
 
     elif STRATEGY == "B":
         rsi = latest["rsi"]
-        if rsi > 65:                     return "RSI超買停利"
+        if rsi > RSI_SELL:               return f"RSI(9)>{RSI_SELL}超買停利"
         if price < entry_price * 0.92:   return "跌幅超過8%停損"
 
     elif STRATEGY == "C":
-        ema9_now, ema21_now   = df["ema9"].iloc[-2], df["ema21"].iloc[-2]
-        ema9_prev, ema21_prev = df["ema9"].iloc[-3], df["ema21"].iloc[-3]
-        if (ema9_now < ema21_now) and (ema9_prev >= ema21_prev):
-            return "EMA死叉賣出"
+        ef_now,  es_now  = df["ema_f"].iloc[-2], df["ema_s"].iloc[-2]
+        ef_prev, es_prev = df["ema_f"].iloc[-3], df["ema_s"].iloc[-3]
+        if (ef_now < es_now) and (ef_prev >= es_prev):
+            return f"EMA{EMA_FAST}/{EMA_SLOW}死叉賣出"
         if price < entry_price * 0.92:   return "跌幅超過8%停損"
 
     elif STRATEGY == "D":
-        macd_now  = df["macd"].iloc[-2]
-        macd_prev = df["macd"].iloc[-3]
-        if (macd_now < 0) and (macd_prev >= 0): return "MACD跌破零軸賣出"
-        if price < entry_price * 0.92:           return "跌幅超過8%停損"
+        sig_death = df["macd_sig_death"].iloc[-2]
+        if sig_death:                    return "MACD信號線死叉賣出"
+        if price < entry_price * 0.92:   return "跌幅超過8%停損"
 
     return None
 
