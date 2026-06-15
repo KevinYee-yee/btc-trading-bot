@@ -239,7 +239,7 @@ def run():
 
     print(f"  K 線：{candle_time}  |  收盤：${price:,.2f}")
 
-    now_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+    now_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:00Z")
 
     # ── 強制測試 ────────────────────────────
     if FORCE_TEST == "buy" and portfolio["position"] == 0:
