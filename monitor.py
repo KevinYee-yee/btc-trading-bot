@@ -228,6 +228,8 @@ def run():
             exit_reason = "觸及布林上軌停利"
         elif price < recent_low:
             exit_reason = "跌破近期低點停損"
+        elif price < entry_price * 0.90:
+            exit_reason = "跌幅超過 10% 強制停損"
 
         if exit_reason:
             sell_value  = qty * price * (1 - COMMISSION)

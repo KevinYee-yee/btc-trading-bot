@@ -175,7 +175,7 @@ function toTW(utcStr) {
   if (!utcStr) return "—";
   try {
     const d = new Date(String(utcStr).replace(" ", "T") + (String(utcStr).includes("Z") ? "" : "Z"));
-    return d.toLocaleString("zh-TW", { timeZone: "Asia/Taipei", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    return d.toLocaleString("zh-TW", { timeZone: "Asia/Taipei", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
   } catch(e) { return utcStr; }
 }
 
