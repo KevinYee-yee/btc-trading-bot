@@ -2,7 +2,7 @@ name: 策略B RSI超賣 紙上交易
 
 on:
   schedule:
-    - cron: "*/30 * * * *"
+    - cron: "*/10 * * * *"
   workflow_dispatch:
     inputs:
       force_test:
