@@ -107,14 +107,10 @@
       <span class="spin">↻</span>更新
     </button>
   </div>
-  <div class="tabs" id="tabs">
-    <div class="tab active" onclick="switchTab('overview')">總覽</div>
-    <div class="tab" onclick="switchTab('A')">BTC-A</div>
-    <div class="tab" onclick="switchTab('B')">BTC-B</div>
-    <div class="tab" onclick="switchTab('C')">BTC-C</div>
-    <div class="tab" onclick="switchTab('D')">BTC-D</div>
-    <div class="tab" onclick="switchTab('ETH_B')">ETH-B</div>
-    <div class="tab" onclick="switchTab('ETH_C')">ETH-C</div>
+  <div class="tabs">
+    <div class="tab active" onclick="switchAsset('overview')">總覽</div>
+    <div class="tab" onclick="switchAsset('BTC')">BTC</div>
+    <div class="tab" onclick="switchAsset('ETH')">ETH</div>
   </div>
 </div>
 
@@ -125,8 +121,12 @@
   </div>
 </div>
 
-<!-- 策略詳細頁（A/B/C/D 共用模板） -->
+<!-- 策略詳細頁 -->
 <div id="view-detail" class="hidden">
+  <!-- 子選單 -->
+  <div style="padding: 12px 16px 0">
+    <div class="tabs" id="sub-tabs"></div>
+  </div>
   <div id="status-banner" class="status-banner empty">
     <span class="status-dot dot-empty"></span>
     <div><div class="status-text" style="color:#666">載入中...</div></div>
@@ -163,7 +163,11 @@ const STRATEGY_LABELS = {
 };
 
 let allData = null;
-let activeTab = "overview";
+let activeAsset = "overview";
+let activeStrat = "A";
+
+const ASSET_STRATS = { BTC: ["A","B","C","D"], ETH: ["ETH_B","ETH_C"] };
+const SUB_LABELS   = { A:"策略A", B:"策略B", C:"策略C", D:"策略D", ETH_B:"策略B", ETH_C:"策略C" };
 
 function toTW(utcStr) {
   if (!utcStr) return "—";
@@ -173,15 +177,32 @@ function toTW(utcStr) {
   } catch(e) { return utcStr; }
 }
 
-function switchTab(tab) {
-  activeTab = tab;
+function switchAsset(asset) {
+  activeAsset = asset;
   document.querySelectorAll(".tab").forEach((el, i) => {
-    const labels = ["overview","A","B","C","D","ETH_B","ETH_C"];
-    el.classList.toggle("active", labels[i] === tab);
+    el.classList.toggle("active", ["overview","BTC","ETH"][i] === asset);
   });
-  document.getElementById("view-overview").classList.toggle("hidden", tab !== "overview");
-  document.getElementById("view-detail").classList.toggle("hidden", tab === "overview");
-  if (allData && tab !== "overview") renderDetail(tab);
+  document.getElementById("view-overview").classList.toggle("hidden", asset !== "overview");
+  document.getElementById("view-detail").classList.toggle("hidden", asset === "overview");
+  if (asset !== "overview") {
+    const strats = ASSET_STRATS[asset];
+    activeStrat = strats[0];
+    buildSubTabs(asset);
+    if (allData) renderDetail(activeStrat);
+  }
+}
+
+function buildSubTabs(asset) {
+  const strats = ASSET_STRATS[asset];
+  document.getElementById("sub-tabs").innerHTML = strats.map(s =>
+    `<div class="tab ${s === activeStrat ? 'active' : ''}" onclick="switchStrat('${s}')">${SUB_LABELS[s]}</div>`
+  ).join("");
+}
+
+function switchStrat(s) {
+  activeStrat = s;
+  buildSubTabs(activeAsset);
+  if (allData) renderDetail(s);
 }
 
 function renderOverview(data) {
@@ -200,7 +221,7 @@ function renderOverview(data) {
     const isHolding = pos !== "空倉中";
     const trades = d["總交易次數"] || 0;
     const wr     = d["勝率"] || "—";
-    return `<div class="ov-card" onclick="switchTab('${s}')">
+    return `<div class="ov-card" onclick="switchAsset('${s.startsWith('ETH') ? 'ETH' : 'BTC'}'); switchStrat('${s}')">
       <div class="ov-label">策略${s}</div>
       <div class="ov-name">${STRATEGY_LABELS[s]}</div>
       <div class="ov-return ${cls}">${ret}</div>
