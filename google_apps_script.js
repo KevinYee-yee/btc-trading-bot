@@ -6,12 +6,14 @@
 
 const SHEET_ID = "12ADUQmL9ZqoobVN4zRzhpR_rXRk2cKs4procf1IifSU";
 
-const STRATEGIES = ["A", "B", "C", "D"];
+const STRATEGIES = ["A", "B", "C", "D", "ETH_B", "ETH_C"];
 const LABELS = {
-  A: "策略A：布林+MACD",
-  B: "策略B：RSI超賣",
-  C: "策略C：EMA交叉",
-  D: "策略D：MACD零軸",
+  A:     "BTC 策略A：布林+MACD",
+  B:     "BTC 策略B：RSI超賣",
+  C:     "BTC 策略C：EMA交叉",
+  D:     "BTC 策略D：MACD零軸",
+  ETH_B: "ETH 策略B：RSI超賣",
+  ETH_C: "ETH 策略C：EMA交叉",
 };
 
 function sheetName(strategy, type) {

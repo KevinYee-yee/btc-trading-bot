@@ -17,8 +17,8 @@ from datetime import datetime, timezone
 # 設定
 # ─────────────────────────────────────────────
 STRATEGY        = os.environ.get("STRATEGY", "A")
-SYMBOL          = "BTC/USDT"
-TIMEFRAME       = "30m"
+SYMBOL          = os.environ.get("SYMBOL", "BTC/USDT")
+TIMEFRAME       = "15m"
 INITIAL_CAPITAL = 1000.0
 COMMISSION      = 0.001
 SL_LOOKBACK     = 3
@@ -29,14 +29,20 @@ MACD_FAST       = 12
 MACD_SLOW       = 26
 MACD_SIGNAL_P   = 9
 
-PORTFOLIO_FILE  = "paper_portfolio.json" if STRATEGY == "A" else f"paper_portfolio_{STRATEGY.lower()}.json"
-TRADE_LOG_FILE  = "trade_log.csv"        if STRATEGY == "A" else f"trade_log_{STRATEGY.lower()}.csv"
+# 策略唯一鍵（含標的前綴）
+ASSET     = "ETH" if "ETH" in SYMBOL else "BTC"
+STRAT_KEY = f"ETH_{STRATEGY}" if ASSET == "ETH" else STRATEGY
+
+PORTFOLIO_FILE  = "paper_portfolio.json" if STRAT_KEY == "A" else f"paper_portfolio_{STRAT_KEY.lower()}.json"
+TRADE_LOG_FILE  = "trade_log.csv"        if STRAT_KEY == "A" else f"trade_log_{STRAT_KEY.lower()}.csv"
 
 STRATEGY_LABEL = {
-    "A": "策略A：布林+MACD",
-    "B": "策略B：RSI超賣",
-    "C": "策略C：EMA交叉",
-    "D": "策略D：MACD零軸",
+    "A":     "BTC 策略A：布林+MACD",
+    "B":     "BTC 策略B：RSI超賣",
+    "C":     "BTC 策略C：EMA交叉",
+    "D":     "BTC 策略D：MACD零軸",
+    "ETH_B": "ETH 策略B：RSI超賣",
+    "ETH_C": "ETH 策略C：EMA交叉",
 }
 
 FORCE_TEST = os.environ.get("FORCE_TEST", "")
@@ -60,7 +66,7 @@ def notify(msg):
 def sheets_post(payload):
     if not GS_WEBHOOK:
         return
-    payload["strategy"] = STRATEGY
+    payload["strategy"] = STRAT_KEY
     try:
         class StopRedirect(urllib.request.HTTPRedirectHandler):
             def http_error_302(self, req, fp, code, msg, headers):
@@ -211,7 +217,7 @@ def get_exit_reason(df, latest, portfolio):
 # 主邏輯
 # ─────────────────────────────────────────────
 def run():
-    label   = STRATEGY_LABEL.get(STRATEGY, f"策略{STRATEGY}")
+    label   = STRATEGY_LABEL.get(STRAT_KEY, f"策略{STRAT_KEY}")
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     print(f"\n{'='*55}")
     print(f"  📡 {label}  |  {now_str}")

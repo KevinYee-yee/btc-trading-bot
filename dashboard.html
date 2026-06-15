@@ -109,10 +109,12 @@
   </div>
   <div class="tabs" id="tabs">
     <div class="tab active" onclick="switchTab('overview')">總覽</div>
-    <div class="tab" onclick="switchTab('A')">策略A</div>
-    <div class="tab" onclick="switchTab('B')">策略B</div>
-    <div class="tab" onclick="switchTab('C')">策略C</div>
-    <div class="tab" onclick="switchTab('D')">策略D</div>
+    <div class="tab" onclick="switchTab('A')">BTC-A</div>
+    <div class="tab" onclick="switchTab('B')">BTC-B</div>
+    <div class="tab" onclick="switchTab('C')">BTC-C</div>
+    <div class="tab" onclick="switchTab('D')">BTC-D</div>
+    <div class="tab" onclick="switchTab('ETH_B')">ETH-B</div>
+    <div class="tab" onclick="switchTab('ETH_C')">ETH-C</div>
   </div>
 </div>
 
@@ -155,7 +157,10 @@
 
 <script>
 const GS_URL = "https://script.google.com/macros/s/AKfycbywcYNXYwDN6Z70F0-1nxVj6f3nzqyyoiugO_Mkiy5LPjXbFb5RP126d79VgqjnWlwJ/exec";
-const STRATEGY_LABELS = { A:"布林+MACD", B:"RSI超賣", C:"EMA交叉", D:"MACD零軸" };
+const STRATEGY_LABELS = {
+  A:"BTC 布林+MACD", B:"BTC RSI超賣", C:"BTC EMA交叉", D:"BTC MACD零軸",
+  ETH_B:"ETH RSI超賣", ETH_C:"ETH EMA交叉"
+};
 
 let allData = null;
 let activeTab = "overview";
@@ -171,7 +176,7 @@ function toTW(utcStr) {
 function switchTab(tab) {
   activeTab = tab;
   document.querySelectorAll(".tab").forEach((el, i) => {
-    const labels = ["overview","A","B","C","D"];
+    const labels = ["overview","A","B","C","D","ETH_B","ETH_C"];
     el.classList.toggle("active", labels[i] === tab);
   });
   document.getElementById("view-overview").classList.toggle("hidden", tab !== "overview");
@@ -186,7 +191,7 @@ function renderOverview(data) {
     "資料時間：" + toTW(data.A?.dashboard?.["最後更新"]) + " 台灣時間";
 
   const grid = document.getElementById("overview-grid");
-  grid.innerHTML = ["A","B","C","D"].map(s => {
+  grid.innerHTML = ["A","B","C","D","ETH_B","ETH_C"].map(s => {
     const d   = data[s]?.dashboard || {};
     const ret = d["累計報酬"] || "0%";
     const retN = parseFloat(ret);

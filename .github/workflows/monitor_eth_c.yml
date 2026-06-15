@@ -1,0 +1,46 @@
+name: ETH 策略C EMA交叉 紙上交易
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+    inputs:
+      force_test:
+        description: '強制測試 (buy / sell / 留空)'
+        required: false
+        default: ''
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install ccxt pandas numpy
+
+      - name: Run ETH Strategy C
+        env:
+          STRATEGY:         C
+          SYMBOL:           ETH/USDT
+          TELEGRAM_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GS_WEBHOOK:       ${{ secrets.GS_WEBHOOK }}
+          FORCE_TEST:       ${{ github.event.inputs.force_test }}
+        run: python monitor.py
+
+      - name: Commit portfolio state
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add paper_portfolio_eth_c.json
+          git add trade_log_eth_c.csv 2>/dev/null || true
+          git diff --cached --quiet || git commit -m "📊ETH-C $(date -u '+%Y-%m-%d %H:%M UTC') 更新"
+          git pull --rebase origin main
+          git push
