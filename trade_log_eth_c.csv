@@ -1,2 +1,3 @@
 time,action,price,qty_btc,pnl_pct,capital_after,reason
 2026-06-16 09:30,BUY,1790.99,0.557793,,0.00,策略訊號進場
+2026-06-16 15:31,SELL,1779.95,0.557793,-0.81%,991.85,EMA13/48死叉賣出
