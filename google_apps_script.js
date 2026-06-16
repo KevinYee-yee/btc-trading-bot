@@ -53,7 +53,16 @@ function doGet(e) {
         .reverse().forEach(r => tradeRows.push(r));
     }
 
-    result[s] = { label: LABELS[s], dashboard: dashData, logs: logRows, trades: tradeRows };
+    const hist = ss.getSheetByName(`📈${s}`);
+    const histRows = [];
+    if (hist && hist.getLastRow() > 1) {
+      const last  = hist.getLastRow();
+      const start = Math.max(2, last - 199);
+      hist.getRange(start, 1, last - start + 1, 2).getValues()
+        .forEach(r => histRows.push(r));
+    }
+
+    result[s] = { label: LABELS[s], dashboard: dashData, logs: logRows, trades: tradeRows, history: histRows };
   });
 
   return ContentService.createTextOutput(JSON.stringify(result))
@@ -127,7 +136,8 @@ function updateDashboard(ss, data, strategy) {
   const totalValue = p.position > 0
     ? parseFloat(data.price) * parseFloat(p.position)
     : parseFloat(p.capital);
-  const totalReturn = ((totalValue - 1000) / 1000 * 100).toFixed(2) + "%";
+  const totalReturnNum = (totalValue - 1000) / 1000 * 100;
+  const totalReturn = totalReturnNum.toFixed(2) + "%";
 
   sh.getRange("B3").setValue(data.time || new Date());
   sh.getRange("B4").setValue("$" + parseFloat(data.price).toLocaleString());
@@ -136,15 +146,29 @@ function updateDashboard(ss, data, strategy) {
   sh.getRange("B9").setValue(posStatus);
   sh.getRange("B10").setValue(p.position > 0 ? "—" : "$" + parseFloat(p.capital).toFixed(2));
   sh.getRange("B11").setValue(p.position > 0 ? "$" + unrealized.toFixed(2) : "—");
-  sh.getRange("B12").setValue(totalReturn);
+  sh.getRange("B12").setNumberFormat("@").setValue(totalReturn);
   sh.getRange("B15").setValue(total);
   sh.getRange("B16").setValue(wins + " 勝 / " + losses + " 敗");
-  sh.getRange("B17").setValue(wr);
+  sh.getRange("B17").setNumberFormat("@").setValue(wr);
   sh.getRange("B18").setValue("$" + parseFloat(p.total_pnl || 0).toFixed(2));
 
   const pnl = parseFloat(p.total_pnl || 0);
   sh.getRange("B18").setFontColor(pnl >= 0 ? "#1a7340" : "#c0392b");
-  sh.getRange("B12").setFontColor(parseFloat(totalReturn) >= 0 ? "#1a7340" : "#c0392b");
+  sh.getRange("B12").setFontColor(totalReturnNum >= 0 ? "#1a7340" : "#c0392b");
+
+  // ── 歷史權益曲線（給折線圖用）：每次更新都記一筆 ──
+  const histName = `📈${strategy}`;
+  let hist = ss.getSheetByName(histName) || ss.insertSheet(histName);
+  if (hist.getLastRow() === 0) {
+    hist.getRange(1, 1, 1, 2).setValues([["時間", "總資產"]]);
+    hist.getRange(1, 1, 1, 2).setFontWeight("bold").setBackground("#4a4a4a").setFontColor("white");
+    hist.setFrozenRows(1);
+  }
+  hist.appendRow([data.time || new Date(), totalValue]);
+  const histMax = 500;
+  if (hist.getLastRow() > histMax + 1) {
+    hist.deleteRows(2, hist.getLastRow() - histMax - 1);
+  }
 }
 
 // ─── 交易紀錄 ───────────────────────────────────────────────

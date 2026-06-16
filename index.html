@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>BTC 策略監測</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
   :root {
     --bg: #0d0d0d; --card: #1a1a1a; --border: #2a2a2a;
@@ -116,6 +117,12 @@
 
 <!-- 總覽 -->
 <div id="view-overview">
+  <div class="section" style="padding:16px 16px 0">
+    <div class="section-label">本金變化（六策略比較）</div>
+    <div style="background:var(--card); border-radius:14px; padding:12px 8px;">
+      <canvas id="equity-chart" height="200"></canvas>
+    </div>
+  </div>
   <div class="overview-grid" id="overview-grid">
     <div class="empty-state" style="grid-column:1/-1">載入中...</div>
   </div>
@@ -213,6 +220,57 @@ function switchStrat(s) {
   activeStrat = s;
   buildSubTabs(activeAsset);
   if (allData) renderDetail(s);
+}
+
+let chartInstance = null;
+function tsToMs(t) {
+  if (!t) return null;
+  const d = new Date(String(t).replace(" ","T") + (String(t).includes("Z") ? "" : "Z"));
+  return d.getTime();
+}
+function renderChart(data) {
+  const colors = { A:"#f5a623", B:"#34c759", C:"#5ac8fa", D:"#ff9500", ETH_B:"#bf5af2", ETH_C:"#ff3b30" };
+  const datasets = ["A","B","C","D","ETH_B","ETH_C"].map(s => {
+    const hist = data[s]?.history || [];
+    return {
+      label: STRATEGY_LABELS[s],
+      data: hist.map(r => ({ x: tsToMs(r[0]), y: parseFloat(r[1]) })).filter(p => p.x && !isNaN(p.y)),
+      borderColor: colors[s],
+      backgroundColor: "transparent",
+      borderWidth: 2,
+      pointRadius: 0,
+      tension: 0.15,
+    };
+  }).filter(d => d.data.length > 0);
+
+  const canvas = document.getElementById("equity-chart");
+  if (!canvas) return;
+  if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+  if (datasets.length === 0) return;
+
+  chartInstance = new Chart(canvas.getContext("2d"), {
+    type: "line",
+    data: { datasets },
+    options: {
+      maintainAspectRatio: false,
+      interaction: { mode: "nearest", intersect: false },
+      scales: {
+        x: {
+          type: "linear",
+          ticks: { color: "#888", font: { size: 9 }, maxTicksLimit: 5,
+            callback: (v) => toTW(new Date(v).toISOString()) },
+          grid: { color: "#222" },
+        },
+        y: {
+          ticks: { color: "#888", font: { size: 9 } },
+          grid: { color: "#222" },
+        },
+      },
+      plugins: {
+        legend: { labels: { color: "#ccc", boxWidth: 10, font: { size: 10 } } },
+      },
+    },
+  });
 }
 
 function renderOverview(data) {
@@ -344,6 +402,7 @@ async function doRefresh() {
     const resp = await fetch(GS_URL + "?t=" + Date.now());
     allData = await resp.json();
     renderOverview(allData);
+    renderChart(allData);
     if (activeAsset !== "overview") renderDetail(activeStrat);
     document.getElementById("last-update").textContent =
       "資料時間：" + toTW(allData.A?.dashboard?.["最後更新"]) + " 台灣時間";
