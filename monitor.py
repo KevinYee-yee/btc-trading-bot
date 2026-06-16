@@ -207,7 +207,7 @@ def get_exit_reason(df, latest, portfolio):
 
     elif STRATEGY == "B":
         rsi = latest["rsi"]
-        if rsi > RSI_SELL:               return f"RSI(9)>{RSI_SELL}超買停利"
+        if rsi > RSI_SELL:               return f"RSI(9)>{RSI_SELL}超買出場"
         if price < entry_price * 0.92:   return "跌幅超過8%停損"
 
     elif STRATEGY == "C":
