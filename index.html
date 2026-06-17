@@ -269,6 +269,18 @@ function switchStrat(s) {
   if (allData) renderDetail(s);
 }
 
+function goToStrat(asset, strat) {
+  activeAsset = asset;
+  activeStrat = strat;
+  document.querySelectorAll(".tab").forEach((el, i) => {
+    el.classList.toggle("active", ["overview","BTC","ETH"][i] === asset);
+  });
+  document.getElementById("view-overview").classList.add("hidden");
+  document.getElementById("view-detail").classList.remove("hidden");
+  buildSubTabs(asset);
+  if (allData) renderDetail(strat);
+}
+
 let chartInstance = null;
 function tsToMs(t) {
   if (!t) return null;
@@ -337,7 +349,8 @@ function renderOverview(data) {
     const trades = d["總交易次數"] || 0;
     const wr     = d["勝率"] || "—";
     const hasT   = parseInt(trades) > 0;
-    return `<div class="ov-card" onclick="switchAsset('${s.startsWith('ETH') ? 'ETH' : 'BTC'}'); switchStrat('${s}')">
+    const asset  = s.startsWith('ETH') ? 'ETH' : 'BTC';
+    return `<div class="ov-card" onclick="goToStrat('${asset}','${s}')">
       <div class="ov-label">策略${s}</div>
       <div class="ov-name">${STRATEGY_LABELS[s]}</div>
       <div class="ov-return ${cls}">${ret}</div>
@@ -458,64 +471,88 @@ function showTradeModal(stratKey) {
   if (!data) return;
   const trades = data.trades || [];
   const d      = data.dashboard || {};
-  const label  = STRATEGY_LABELS[stratKey] || stratKey;
 
   document.getElementById("modal-title").textContent = `策略${stratKey} 交易明細`;
 
   // 摘要列
   const total  = parseInt(d["總交易次數"] || 0);
-  const wins   = parseInt((d["勝 / 敗"] || "0").split(" ")[0]) || 0;
+  const wlStr  = String(d["勝 / 敗"] || "");
+  const wins   = parseInt(wlStr.match(/^(\d+)/)?.[1] || 0);
   const losses = total - wins;
-  const pnl    = d["累計已實現損益"] || "$0.00";
+  const pnlRaw = d["累計已實現損益"] || "$0.00";
   const wr     = d["勝率"] || "—";
-  const pnlN   = parseFloat(String(pnl).replace(/[$,]/g,""));
+  const pnlN   = parseFloat(String(pnlRaw).replace(/[$,]/g,""));
   document.getElementById("modal-summary").innerHTML = `
     <div class="modal-stat"><div class="modal-stat-v">${total}</div><div class="modal-stat-l">總交易</div></div>
     <div class="modal-stat"><div class="modal-stat-v green">${wins}</div><div class="modal-stat-l">獲利</div></div>
     <div class="modal-stat"><div class="modal-stat-v red">${losses}</div><div class="modal-stat-l">虧損</div></div>
     <div class="modal-stat"><div class="modal-stat-v">${wr}</div><div class="modal-stat-l">勝率</div></div>
-    <div class="modal-stat"><div class="modal-stat-v ${pnlN>=0?'green':'red'}">${pnl}</div><div class="modal-stat-l">已實現損益</div></div>`;
+    <div class="modal-stat"><div class="modal-stat-v ${pnlN>=0?'green':'red'}">${pnlRaw}</div><div class="modal-stat-l">已實現損益</div></div>`;
+
+  // 格式化損益百分比 — Sheets 把 "-1.07%" 字串自動轉成數字 -0.0107，需做兩手處理
+  function fmtPnlPct(raw) {
+    if (raw === "" || raw === null || raw === undefined) return "";
+    if (typeof raw === "number") {
+      const pct = raw * 100;
+      return (pct >= 0 ? "+" : "") + pct.toFixed(2) + "%";
+    }
+    return String(raw);
+  }
+
+  // 格式化金額
+  function fmtUSD(n) {
+    return "$" + parseFloat(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function fmtPrice(n) {
+    return "$" + parseFloat(n || 0).toLocaleString("en-US", { maximumFractionDigits: 1 });
+  }
 
   // 配對買賣（trades 是新→舊，index 0 最新）
+  // 跳過連續兩個 SELL 的情況（重複記錄）
+  const COMMISSION = 0.001;
   const pairs = [];
   let i = 0;
   while (i < trades.length) {
-    const r = trades[i];
-    const action = r[1];
+    const r      = trades[i];
+    const action = String(r[1] || "").trim();
     if (action === "SELL") {
-      // 找對應的 BUY（下一筆）
-      const buy = trades[i + 1];
-      pairs.push({ sell: r, buy: buy || null });
-      i += 2;
+      // 往後找最近的 BUY，跳過連續 SELL（重複）
+      let j = i + 1;
+      while (j < trades.length && String(trades[j][1] || "").trim() === "SELL") j++;
+      const buy = j < trades.length ? trades[j] : null;
+      pairs.push({ sell: r, buy });
+      i = j + 1;
     } else {
-      // 未配對 BUY = 目前持倉
+      // BUY 沒有配對 SELL = 目前持倉中
       pairs.push({ sell: null, buy: r });
       i += 1;
     }
   }
 
-  document.getElementById("modal-pair-list").innerHTML = pairs.map((p, idx) => {
+  document.getElementById("modal-pair-list").innerHTML = pairs.map((p) => {
     const isOpen = !p.sell;
     const buy    = p.buy;
     const sell   = p.sell;
 
-    const buyPrice  = buy  ? "$" + parseFloat(buy[2] ||0).toLocaleString("en-US",{maximumFractionDigits:1}) : "—";
-    const sellPrice = sell ? "$" + parseFloat(sell[2]||0).toLocaleString("en-US",{maximumFractionDigits:1}) : "—";
-    const qty       = buy  ? parseFloat(buy[3]||0) : 0;
-    const qtyFmt    = qty.toFixed(4);
-    const pnlPct    = sell ? (sell[4] || "") : "";
-    const isWin     = pnlPct.startsWith("+");
-    const pnlCls    = isWin ? "green" : "red";
+    const buyPriceN  = parseFloat(buy?.[2] || 0);
+    const sellPriceN = parseFloat(sell?.[2] || 0);
+    const qty        = parseFloat(buy?.[3] || sell?.[3] || 0);
+    const cost       = buyPriceN  * qty * (1 + COMMISSION);
+    const proceeds   = sellPriceN * qty * (1 - COMMISSION);
+    const pnlAmt     = proceeds - cost;
+
+    const pnlPct  = fmtPnlPct(sell?.[4]);
+    const isWin   = pnlPct.startsWith("+");
+    const pnlCls  = !pnlPct ? "" : (isWin ? "green" : "red");
     const sellBadge = isWin ? "pb-sell-win" : "pb-sell-loss";
-    const capAfter  = sell ? "$" + parseFloat(sell[5]||0).toFixed(2) : "";
-    const reason    = sell ? sell[6] : (buy ? buy[6] : "");
+    const reason  = sell ? sell[6] : (buy ? buy[6] : "");
 
     return `<div class="pair-card ${isOpen ? 'open' : ''}">
       <div class="pair-row">
         <span class="pair-badge pb-buy">買入</span>
         <div class="pair-info">
-          <div class="pair-price">${buyPrice}</div>
-          <div class="pair-qty">數量 ${qtyFmt}</div>
+          <div class="pair-price">${fmtPrice(buyPriceN)}</div>
+          <div class="pair-qty">數量 ${qty.toFixed(4)} · 成本 ${fmtUSD(cost)}</div>
         </div>
         <div class="pair-right">
           <div class="pair-pnl" style="color:var(--sub);font-size:12px">進場</div>
@@ -527,8 +564,8 @@ function showTradeModal(stratKey) {
         : `<div class="pair-row">
             <span class="pair-badge ${sellBadge}">賣出</span>
             <div class="pair-info">
-              <div class="pair-price">${sellPrice}</div>
-              <div class="pair-qty">餘額 ${capAfter}</div>
+              <div class="pair-price">${fmtPrice(sellPriceN)}</div>
+              <div class="pair-qty">所得 ${fmtUSD(proceeds)} · 損益 <span class="${pnlCls}">${fmtUSD(pnlAmt)}</span></div>
             </div>
             <div class="pair-right">
               <div class="pair-pnl ${pnlCls}">${pnlPct || "—"}</div>
