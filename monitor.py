@@ -28,11 +28,12 @@ BB_MULT         = 2.0
 MACD_FAST       = 12
 MACD_SLOW       = 26
 MACD_SIGNAL_P   = 9
-RSI_PERIOD      = 9    # 策略B：RSI週期（改14→9，更靈敏）
-RSI_BUY         = 40   # 策略B：買進門檻（改35→40）
-RSI_SELL        = 62   # 策略B：賣出門檻（改65→62）
-EMA_FAST        = 13   # 策略C：快線（改9→13）
-EMA_SLOW        = 48   # 策略C：慢線（改21→48）
+RSI_PERIOD      = 9
+RSI_BUY         = 40
+RSI_SELL        = 62
+EMA_FAST        = 13
+EMA_SLOW        = 48
+COOLDOWN_BARS   = 4   # P1：出場後冷卻根數（B/ETH_B 用）
 
 # 策略唯一鍵（含標的前綴）
 ASSET     = "ETH" if "ETH" in SYMBOL else "BTC"
@@ -94,11 +95,13 @@ def sheets_post(payload):
 
 def load_portfolio():
     if os.path.exists(PORTFOLIO_FILE):
-        with open(PORTFOLIO_FILE) as f:
-            return json.load(f)
+        p = json.load(open(PORTFOLIO_FILE))
+        p.setdefault("last_exit_candle", "")  # P1：冷卻期用
+        return p
     return {"capital": INITIAL_CAPITAL, "position": 0.0, "entry_price": 0.0,
             "entry_time": "", "last_candle": "", "total_trades": 0,
-            "wins": 0, "losses": 0, "total_pnl": 0.0}
+            "wins": 0, "losses": 0, "total_pnl": 0.0,
+            "last_exit_candle": ""}
 
 def save_portfolio(p):
     with open(PORTFOLIO_FILE, "w") as f:
@@ -127,7 +130,7 @@ def fetch_and_calc():
     df["ts"] = pd.to_datetime(df["ts"], unit="ms", utc=True)
     df.set_index("ts", inplace=True)
 
-    # 布林通道（策略 A 用）
+    # 布林通道（策略 A、C 用）
     df["bb_mid"]   = df["close"].rolling(BB_LENGTH).mean()
     df["bb_std"]   = df["close"].rolling(BB_LENGTH).std()
     df["bb_upper"] = df["bb_mid"] + BB_MULT * df["bb_std"]
@@ -146,7 +149,7 @@ def fetch_and_calc():
     loss        = (-delta.clip(upper=0)).rolling(RSI_PERIOD).mean()
     df["rsi"]   = 100 - (100 / (1 + gain / loss))
 
-    # EMA 13/48（策略 C 用）
+    # EMA 13/48（策略 B 趨勢過濾 + 策略 C 用）
     df["ema_f"] = df["close"].ewm(span=EMA_FAST, adjust=False).mean()
     df["ema_s"] = df["close"].ewm(span=EMA_SLOW, adjust=False).mean()
 
@@ -174,17 +177,24 @@ def get_entry_signal(df, latest):
 
     elif STRATEGY == "B":
         rsi = latest["rsi"]
-        return rsi < RSI_BUY, f"RSI(9) {rsi:.1f}", f"{'✅' if rsi < RSI_BUY else '❌'} <{RSI_BUY}"
+        # P2：EMA48 趨勢過濾，只在上升趨勢中做多
+        ema_s_now  = df["ema_s"].iloc[-2]
+        ema_s_prev = df["ema_s"].iloc[-6]  # 4根前
+        trend_up   = ema_s_now > ema_s_prev
+        ok = rsi < RSI_BUY and trend_up
+        return ok, f"RSI(9) {rsi:.1f}", f"{'✅' if rsi < RSI_BUY else '❌'}<{RSI_BUY} EMA48趨勢{'✅' if trend_up else '❌'}"
 
     elif STRATEGY == "C":
         ef_now,  es_now  = df["ema_f"].iloc[-2], df["ema_s"].iloc[-2]
         ef_prev, es_prev = df["ema_f"].iloc[-3], df["ema_s"].iloc[-3]
-        cross_up = (ef_now > es_now) and (ef_prev <= es_prev)
-        return cross_up, f"EMA{EMA_FAST} {ef_now:.0f}", f"EMA{EMA_SLOW} {es_now:.0f}"
+        cross_up  = (ef_now > es_now) and (ef_prev <= es_prev)
+        # P2：只在布林中軌以下做多，避免在高點買入
+        below_mid = price < latest["bb_mid"]
+        return cross_up and below_mid, f"EMA{EMA_FAST} {ef_now:.0f}", f"EMA{EMA_SLOW} {es_now:.0f} 中軌{'✅' if below_mid else '❌'}"
 
     elif STRATEGY == "D":
-        macd_now = df["macd"].iloc[-2]
-        sig_cross = df["macd_sig_cross"].iloc[-2]
+        macd_now   = df["macd"].iloc[-2]
+        sig_cross  = df["macd_sig_cross"].iloc[-2]
         above_zero = macd_now > 0
         return sig_cross and above_zero, f"MACD {macd_now:.1f}", f"{'✅' if sig_cross else '❌'}信號穿越+{'✅' if above_zero else '❌'}零軸上"
 
@@ -207,8 +217,12 @@ def get_exit_reason(df, latest, portfolio):
 
     elif STRATEGY == "B":
         rsi = latest["rsi"]
-        if rsi > RSI_SELL:               return f"RSI(9)>{RSI_SELL}超買出場"
-        if price < entry_price * 0.92:   return "跌幅超過8%停損"
+        # P1：RSI>62 需同時確認有獲利（+0.3%）才出場
+        if rsi > RSI_SELL and price > entry_price * 1.003:
+            return f"RSI(9)>{RSI_SELL}超買出場（獲利確認）"
+        # P1：縮小停損從 8% 改為 2%
+        if price < entry_price * 0.98:
+            return "跌幅超過2%停損"
 
     elif STRATEGY == "C":
         ef_now,  es_now  = df["ema_f"].iloc[-2], df["ema_s"].iloc[-2]
@@ -243,6 +257,10 @@ def run():
         print(f"  ⏭  本 K 線已處理過，跳過（{candle_time}）")
         return
 
+    # P1：立刻標記此K線已佔用，防止並發重複執行
+    portfolio["last_candle"] = candle_time
+    save_portfolio(portfolio)
+
     price     = latest["close"]
     bb_upper  = latest.get("bb_upper", 0)
     bb_lower  = latest.get("bb_lower", 0)
@@ -270,15 +288,30 @@ def run():
             _execute_sell(df, latest, portfolio, price, bb_upper, bb_lower, reason, now_time)
             return
 
+    # ── P1：冷卻期檢查（B/ETH_B 用）────────
+    in_cooldown = False
+    if STRATEGY == "B":
+        last_exit = portfolio.get("last_exit_candle", "")
+        if last_exit:
+            try:
+                last_ts    = pd.Timestamp(last_exit)
+                current_ts = pd.Timestamp(candle_time)
+                bars_since = int((current_ts - last_ts).total_seconds() / (15 * 60))
+                if bars_since < COOLDOWN_BARS:
+                    print(f"  ⏸ 冷卻期中（距上次出場 {bars_since}/{COOLDOWN_BARS} 根K棒）")
+                    in_cooldown = True
+            except Exception:
+                pass
+
     # ── 無倉位：檢查進場 ────────────────────
     buy, cond1, cond2 = get_entry_signal(df, latest)
-    if portfolio["position"] == 0 and buy:
+    if portfolio["position"] == 0 and buy and not in_cooldown:
         _execute_buy(df, latest, portfolio, price, bb_upper, bb_lower, recent_low,
                      now_time, "策略訊號進場", cond1, cond2)
     else:
-        print(f"  ⏸  無訊號（{cond1} / {cond2}）")
+        reason_skip = "冷卻期" if in_cooldown else f"{cond1} / {cond2}"
+        print(f"  ⏸  無訊號（{reason_skip}）")
 
-    portfolio["last_candle"] = candle_time
     save_portfolio(portfolio)
 
     sheets_post({
@@ -310,11 +343,11 @@ def _execute_buy(df, latest, portfolio, price, bb_upper, bb_lower, recent_low,
                  "bb_upper":str(bb_upper),"bb_lower":str(bb_lower),"recent_low":str(recent_low),
                  "cond_bb":cond1,"cond_macd":cond2,"signal":"進場","account_status":"持倉",
                  "portfolio":portfolio})
-    notify(f"🔔 <b>進場｜{STRATEGY_LABEL.get(STRATEGY)}</b>\n"
+    notify(f"🔔 <b>進場｜{STRATEGY_LABEL.get(STRAT_KEY)}</b>\n"
            f"進場價：<b>${price:,.2f}</b>\n"
-           f"模擬買入：{qty:.6f} BTC\n"
+           f"模擬買入：{qty:.6f}\n"
            f"原因：{reason}")
-    print(f"  🔔 買入 {qty:.6f} BTC @ ${price:,.2f}")
+    print(f"  🔔 買入 {qty:.6f} @ ${price:,.2f}")
 
 
 def _execute_sell(df, latest, portfolio, price, bb_upper, bb_lower, reason, now_time):
@@ -324,13 +357,14 @@ def _execute_sell(df, latest, portfolio, price, bb_upper, bb_lower, reason, now_
     cost        = qty * entry_price * (1 + COMMISSION)
     pnl         = sell_value - cost
     pnl_pct     = pnl / cost * 100
-    portfolio["capital"]      += sell_value
-    portfolio["position"]      = 0.0
-    portfolio["entry_price"]   = 0.0
-    portfolio["entry_time"]    = ""
-    portfolio["last_candle"]   = str(latest.name)
-    portfolio["total_trades"] += 1
-    portfolio["total_pnl"]    += pnl
+    portfolio["capital"]        += sell_value
+    portfolio["position"]        = 0.0
+    portfolio["entry_price"]     = 0.0
+    portfolio["entry_time"]      = ""
+    portfolio["last_candle"]     = str(latest.name)
+    portfolio["last_exit_candle"] = str(latest.name)  # P1：記錄出場K線供冷卻期用
+    portfolio["total_trades"]   += 1
+    portfolio["total_pnl"]      += pnl
     if pnl > 0: portfolio["wins"]   += 1
     else:        portfolio["losses"] += 1
     log_trade("SELL", price, qty, pnl_pct, reason, portfolio)
@@ -339,7 +373,7 @@ def _execute_sell(df, latest, portfolio, price, bb_upper, bb_lower, reason, now_
                  "qty":str(qty),"pnl_pct":f"{pnl_pct:+.2f}%","capital_after":str(portfolio["capital"]),
                  "reason":reason,"portfolio":portfolio,"bb_upper":str(bb_upper),"bb_lower":str(bb_lower)})
     icon = "🟢" if pnl > 0 else "🔴"
-    notify(f"{icon} <b>出場｜{STRATEGY_LABEL.get(STRATEGY)}</b>\n"
+    notify(f"{icon} <b>出場｜{STRATEGY_LABEL.get(STRAT_KEY)}</b>\n"
            f"進場：${entry_price:,.2f} → 出場：${price:,.2f}\n"
            f"損益：<b>{pnl_pct:+.2f}%（{pnl:+.2f} USDT）</b>\n"
            f"原因：{reason}")
