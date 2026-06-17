@@ -1,11 +1,11 @@
 {
-  "capital": 0.0,
-  "position": 0.5502983173698337,
-  "entry_price": 1795.44,
-  "entry_time": "2026-06-17 04:30:00+00:00",
-  "last_candle": "2026-06-17 05:15:00+00:00",
-  "total_trades": 5,
+  "capital": 987.5288590645123,
+  "position": 0.0,
+  "entry_price": 0.0,
+  "entry_time": "",
+  "last_candle": "2026-06-17 05:30:00+00:00",
+  "total_trades": 6,
   "wins": 3,
-  "losses": 2,
-  "total_pnl": -10.984361450567349
+  "losses": 3,
+  "total_pnl": -12.47114093548771
 }
