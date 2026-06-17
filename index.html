@@ -92,6 +92,40 @@
   .empty-state { text-align: center; padding: 28px; color: var(--sub); font-size: 13px; }
   .hidden { display: none !important; }
 
+  /* 交易明細 Modal */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 100; display: flex; align-items: flex-end; }
+  .modal-overlay.hidden { display: none !important; }
+  .modal-sheet { background: var(--card); border-radius: 22px 22px 0 0; width: 100%; max-height: 82vh; overflow-y: auto; padding: 0 0 44px; animation: slideUp 0.22s ease; }
+  @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  .modal-handle { width: 38px; height: 4px; background: #3a3a3a; border-radius: 2px; margin: 14px auto 0; }
+  .modal-head { padding: 16px 20px 10px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); }
+  .modal-title { font-size: 15px; font-weight: 700; }
+  .modal-close { font-size: 20px; color: var(--sub); cursor: pointer; line-height: 1; padding: 4px 4px 4px 12px; }
+  .modal-summary { display: flex; gap: 0; border-bottom: 1px solid var(--border); }
+  .modal-stat { flex: 1; text-align: center; padding: 12px 4px; }
+  .modal-stat-v { font-size: 17px; font-weight: 700; }
+  .modal-stat-l { font-size: 10px; color: var(--sub); margin-top: 2px; }
+  .pair-list { padding: 12px 16px 0; display: flex; flex-direction: column; gap: 10px; }
+  .pair-card { background: #111; border-radius: 14px; overflow: hidden; }
+  .pair-card.open { border: 1px solid #1a4a2e; }
+  .pair-row { display: flex; align-items: center; padding: 11px 14px; gap: 10px; }
+  .pair-row + .pair-row { border-top: 1px solid #1e1e1e; }
+  .pair-badge { font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 6px; flex-shrink: 0; min-width: 42px; text-align: center; }
+  .pb-buy  { background: #0a2218; color: var(--green); }
+  .pb-sell-win  { background: #0a2218; color: var(--green); }
+  .pb-sell-loss { background: #220a0a; color: var(--red); }
+  .pb-open { background: #2a1e00; color: var(--gold); }
+  .pair-info { flex: 1; }
+  .pair-price { font-size: 15px; font-weight: 700; }
+  .pair-qty   { font-size: 11px; color: var(--sub); margin-top: 1px; }
+  .pair-right { text-align: right; flex-shrink: 0; }
+  .pair-pnl   { font-size: 16px; font-weight: 700; }
+  .pair-time  { font-size: 10px; color: var(--sub); margin-top: 2px; }
+  .pair-reason { padding: 6px 14px 10px; font-size: 11px; color: var(--sub); }
+
+  /* ov-card 交易筆數可點擊 */
+  .ov-trades-btn { font-size: 11px; color: var(--gold); margin-top: 4px; cursor: pointer; display: inline-block; text-decoration: underline dotted; }
+
   @media (min-width: 520px) { body { max-width: 600px; } .cards { grid-template-columns: repeat(3, 1fr); } }
 </style>
 </head>
@@ -112,6 +146,19 @@
     <div class="tab active" onclick="switchAsset('overview')">總覽</div>
     <div class="tab" onclick="switchAsset('BTC')">BTC</div>
     <div class="tab" onclick="switchAsset('ETH')">ETH</div>
+  </div>
+</div>
+
+<!-- 交易明細 Modal -->
+<div class="modal-overlay hidden" id="trade-modal-overlay" onclick="closeTradeModal(event)">
+  <div class="modal-sheet" id="trade-modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-head">
+      <div class="modal-title" id="modal-title">交易明細</div>
+      <div class="modal-close" onclick="closeTradeModal()">✕</div>
+    </div>
+    <div class="modal-summary" id="modal-summary"></div>
+    <div class="pair-list" id="modal-pair-list"></div>
   </div>
 </div>
 
@@ -289,11 +336,14 @@ function renderOverview(data) {
     const isHolding = pos !== "空倉中";
     const trades = d["總交易次數"] || 0;
     const wr     = d["勝率"] || "—";
+    const hasT   = parseInt(trades) > 0;
     return `<div class="ov-card" onclick="switchAsset('${s.startsWith('ETH') ? 'ETH' : 'BTC'}'); switchStrat('${s}')">
       <div class="ov-label">策略${s}</div>
       <div class="ov-name">${STRATEGY_LABELS[s]}</div>
       <div class="ov-return ${cls}">${ret}</div>
-      <div class="ov-trades">${trades} 筆 · 勝率 ${wr}</div>
+      ${hasT
+        ? `<div class="ov-trades-btn" onclick="event.stopPropagation(); showTradeModal('${s}')">${trades} 筆 · 勝率 ${wr} ▸</div>`
+        : `<div class="ov-trades">0 筆</div>`}
       <div class="ov-status ${isHolding ? 'holding':'empty'}">${isHolding ? '持倉中' : '空倉'}</div>
     </div>`;
   }).join("");
@@ -340,7 +390,13 @@ function renderDetail(s) {
   document.getElementById("c-return").className     = "card-value " + (retN >= 0 ? "green" : "red");
   document.getElementById("c-pnl").textContent      = pnlStr;
   document.getElementById("c-pnl").className        = "card-value " + (pnlN >= 0 ? "green" : "red");
-  document.getElementById("c-trades").textContent   = d["總交易次數"] || "0";
+  const tradeCount = d["總交易次數"] || "0";
+  const tradeEl2 = document.getElementById("c-trades");
+  if (parseInt(tradeCount) > 0) {
+    tradeEl2.innerHTML = `<span style="cursor:pointer;text-decoration:underline dotted;color:var(--gold)" onclick="showTradeModal('${s}')">${tradeCount}</span>`;
+  } else {
+    tradeEl2.textContent = tradeCount;
+  }
   document.getElementById("c-wr").textContent       = d["勝率"] || "—";
 
   const logEl = document.getElementById("log-list");
@@ -390,6 +446,101 @@ function renderDetail(s) {
       </div>`;
     }).join("");
   }
+}
+
+function closeTradeModal(e) {
+  if (e && e.target !== document.getElementById("trade-modal-overlay")) return;
+  document.getElementById("trade-modal-overlay").classList.add("hidden");
+}
+
+function showTradeModal(stratKey) {
+  const data   = allData?.[stratKey];
+  if (!data) return;
+  const trades = data.trades || [];
+  const d      = data.dashboard || {};
+  const label  = STRATEGY_LABELS[stratKey] || stratKey;
+
+  document.getElementById("modal-title").textContent = `策略${stratKey} 交易明細`;
+
+  // 摘要列
+  const total  = parseInt(d["總交易次數"] || 0);
+  const wins   = parseInt((d["勝 / 敗"] || "0").split(" ")[0]) || 0;
+  const losses = total - wins;
+  const pnl    = d["累計已實現損益"] || "$0.00";
+  const wr     = d["勝率"] || "—";
+  const pnlN   = parseFloat(String(pnl).replace(/[$,]/g,""));
+  document.getElementById("modal-summary").innerHTML = `
+    <div class="modal-stat"><div class="modal-stat-v">${total}</div><div class="modal-stat-l">總交易</div></div>
+    <div class="modal-stat"><div class="modal-stat-v green">${wins}</div><div class="modal-stat-l">獲利</div></div>
+    <div class="modal-stat"><div class="modal-stat-v red">${losses}</div><div class="modal-stat-l">虧損</div></div>
+    <div class="modal-stat"><div class="modal-stat-v">${wr}</div><div class="modal-stat-l">勝率</div></div>
+    <div class="modal-stat"><div class="modal-stat-v ${pnlN>=0?'green':'red'}">${pnl}</div><div class="modal-stat-l">已實現損益</div></div>`;
+
+  // 配對買賣（trades 是新→舊，index 0 最新）
+  const pairs = [];
+  let i = 0;
+  while (i < trades.length) {
+    const r = trades[i];
+    const action = r[1];
+    if (action === "SELL") {
+      // 找對應的 BUY（下一筆）
+      const buy = trades[i + 1];
+      pairs.push({ sell: r, buy: buy || null });
+      i += 2;
+    } else {
+      // 未配對 BUY = 目前持倉
+      pairs.push({ sell: null, buy: r });
+      i += 1;
+    }
+  }
+
+  document.getElementById("modal-pair-list").innerHTML = pairs.map((p, idx) => {
+    const isOpen = !p.sell;
+    const buy    = p.buy;
+    const sell   = p.sell;
+
+    const buyPrice  = buy  ? "$" + parseFloat(buy[2] ||0).toLocaleString("en-US",{maximumFractionDigits:1}) : "—";
+    const sellPrice = sell ? "$" + parseFloat(sell[2]||0).toLocaleString("en-US",{maximumFractionDigits:1}) : "—";
+    const qty       = buy  ? parseFloat(buy[3]||0) : 0;
+    const qtyFmt    = qty.toFixed(4);
+    const pnlPct    = sell ? (sell[4] || "") : "";
+    const isWin     = pnlPct.startsWith("+");
+    const pnlCls    = isWin ? "green" : "red";
+    const sellBadge = isWin ? "pb-sell-win" : "pb-sell-loss";
+    const capAfter  = sell ? "$" + parseFloat(sell[5]||0).toFixed(2) : "";
+    const reason    = sell ? sell[6] : (buy ? buy[6] : "");
+
+    return `<div class="pair-card ${isOpen ? 'open' : ''}">
+      <div class="pair-row">
+        <span class="pair-badge pb-buy">買入</span>
+        <div class="pair-info">
+          <div class="pair-price">${buyPrice}</div>
+          <div class="pair-qty">數量 ${qtyFmt}</div>
+        </div>
+        <div class="pair-right">
+          <div class="pair-pnl" style="color:var(--sub);font-size:12px">進場</div>
+          <div class="pair-time">${buy ? toTW(buy[0]) : "—"}</div>
+        </div>
+      </div>
+      ${isOpen
+        ? `<div class="pair-row"><span class="pair-badge pb-open">持倉中</span><div class="pair-info" style="color:var(--gold);font-size:13px">等待出場訊號</div></div>`
+        : `<div class="pair-row">
+            <span class="pair-badge ${sellBadge}">賣出</span>
+            <div class="pair-info">
+              <div class="pair-price">${sellPrice}</div>
+              <div class="pair-qty">餘額 ${capAfter}</div>
+            </div>
+            <div class="pair-right">
+              <div class="pair-pnl ${pnlCls}">${pnlPct || "—"}</div>
+              <div class="pair-time">${sell ? toTW(sell[0]) : "—"}</div>
+            </div>
+          </div>
+          ${reason ? `<div class="pair-reason">${reason}</div>` : ""}`
+      }
+    </div>`;
+  }).join("") || '<div class="empty-state">尚無交易紀錄</div>';
+
+  document.getElementById("trade-modal-overlay").classList.remove("hidden");
 }
 
 let loading = false;
