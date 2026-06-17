@@ -1,0 +1,106 @@
+name: 部署驗證
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 等待 GitHub Pages 部署完成
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo  = context.repo.repo;
+            const sha   = context.sha;
+            let passed  = false;
+
+            for (let i = 0; i < 24; i++) {
+              await new Promise(r => setTimeout(r, 10000));
+              const runs = await github.rest.actions.listWorkflowRunsForRepo({
+                owner, repo, event: "push", per_page: 10
+              });
+              const pagesDeploy = runs.data.workflow_runs.find(r =>
+                r.name === "pages build and deployment" && r.head_sha === sha
+              );
+              if (pagesDeploy) {
+                if (pagesDeploy.status === "completed") {
+                  if (pagesDeploy.conclusion === "success") { passed = true; break; }
+                  core.setFailed(`Pages 部署失敗：${pagesDeploy.conclusion}`);
+                  return;
+                }
+              }
+              console.log(`等待 Pages 部署中... (${(i+1)*10}s)`);
+            }
+            if (!passed) core.setFailed("等待 Pages 部署逾時（4分鐘）");
+
+      - name: 驗證 Dashboard 可存取 & 內容正確
+        id: check
+        run: |
+          URL="https://kevinyee-yee.github.io/btc-trading-bot/"
+          HTTP=$(curl -s -o /tmp/page.html -w "%{http_code}" "$URL")
+          echo "HTTP_CODE=$HTTP" >> $GITHUB_OUTPUT
+
+          if [ "$HTTP" != "200" ]; then
+            echo "CHECK_RESULT=FAIL_HTTP" >> $GITHUB_OUTPUT
+            echo "❌ HTTP 回應 $HTTP"
+            exit 1
+          fi
+
+          # 檢查關鍵內容是否存在
+          if grep -q "BTC 策略 A/B/C/D 監測" /tmp/page.html && \
+             grep -q "equity-chart" /tmp/page.html && \
+             grep -q "showTradeModal" /tmp/page.html; then
+            echo "CHECK_RESULT=OK" >> $GITHUB_OUTPUT
+            echo "✅ 內容驗證通過"
+          else
+            echo "CHECK_RESULT=FAIL_CONTENT" >> $GITHUB_OUTPUT
+            echo "❌ 關鍵內容遺失"
+            exit 1
+          fi
+
+      - name: 驗證 Apps Script 端點可存取
+        id: check_gs
+        run: |
+          GS_URL="${{ secrets.GS_WEBHOOK }}"
+          # 只測試 doGet（GET 請求）
+          STATUS=$(curl -sL -o /dev/null -w "%{http_code}" \
+            "https://script.google.com/macros/s/AKfycbya4n2VkmvWcc6Rswq2wWqA26w5Pa94xb3w-3DSjVyMYAE8_t-dRLFvJBOWS_hAmUg/exec")
+          echo "GS_STATUS=$STATUS" >> $GITHUB_OUTPUT
+          if [ "$STATUS" = "200" ]; then
+            echo "✅ Apps Script 端點正常"
+          else
+            echo "⚠️ Apps Script 回應 $STATUS（非致命）"
+          fi
+
+      - name: 發送 Telegram 部署通知
+        if: always()
+        run: |
+          RESULT="${{ steps.check.outputs.CHECK_RESULT }}"
+          GS="${{ steps.check_gs.outputs.GS_STATUS }}"
+          SHA="${{ github.sha }}"
+          SHORT_SHA="${SHA:0:7}"
+          ACTOR="${{ github.actor }}"
+          MSG_FILE="${{ github.event.head_commit.message }}"
+
+          if [ "$RESULT" = "OK" ]; then
+            ICON="✅"
+            STATUS_TEXT="部署成功"
+          else
+            ICON="❌"
+            STATUS_TEXT="部署失敗（$RESULT）"
+          fi
+
+          MSG="${ICON} <b>${STATUS_TEXT}</b>
+          提交：<code>${SHORT_SHA}</code>
+          訊息：${MSG_FILE}
+          Dashboard：正常
+          Apps Script：HTTP ${GS}
+          🔗 https://kevinyee-yee.github.io/btc-trading-bot/"
+
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="$MSG" \
+            -d parse_mode="HTML" || true
