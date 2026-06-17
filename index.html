@@ -198,14 +198,14 @@
     </div>
   </div>
 
+  <div class="section" id="trade-section" style="margin-top:20px">
+    <div class="section-label">交易紀錄</div>
+    <div class="pair-list" id="trade-list" style="padding:0"></div>
+  </div>
+
   <div class="section" style="margin-top:20px">
     <div class="section-label">最近監測</div>
     <div class="log-list" id="log-list"><div class="empty-state">載入中...</div></div>
-  </div>
-
-  <div class="section" id="trade-section" style="margin-top:20px; display:none">
-    <div class="section-label">交易紀錄</div>
-    <div class="trade-list" id="trade-list"></div>
   </div>
 </div>
 
@@ -406,7 +406,8 @@ function renderDetail(s) {
   const tradeCount = d["總交易次數"] || "0";
   const tradeEl2 = document.getElementById("c-trades");
   if (parseInt(tradeCount) > 0) {
-    tradeEl2.innerHTML = `<span style="cursor:pointer;text-decoration:underline dotted;color:var(--gold)" onclick="showTradeModal('${s}')">${tradeCount}</span>`;
+    tradeEl2.innerHTML = `<span style="cursor:pointer;text-decoration:underline dotted;color:var(--gold)"
+      onclick="document.getElementById('trade-section').scrollIntoView({behavior:'smooth'})">${tradeCount}</span>`;
   } else {
     tradeEl2.textContent = tradeCount;
   }
@@ -433,29 +434,84 @@ function renderDetail(s) {
     }).join("");
   }
 
-  const tradeSection = document.getElementById("trade-section");
-  const tradeEl      = document.getElementById("trade-list");
+  const tradeEl = document.getElementById("trade-list");
   if (!trades.length) {
-    tradeSection.style.display = "none";
+    tradeEl.innerHTML = '<div class="empty-state">尚無交易紀錄</div>';
   } else {
-    tradeSection.style.display = "block";
-    tradeEl.innerHTML = trades.map(r => {
-      const isBuy  = r[1] === "BUY";
-      const pnlPct = r[4] || "";
-      const isWin  = pnlPct.startsWith("+");
-      const badgeCls = isBuy ? "badge-buy" : (isWin ? "badge-sell-win" : "badge-sell-loss");
-      const pnlCls   = isBuy ? "white" : (isWin ? "green" : "red");
-      const priceFmt = "$" + parseFloat(r[2]||0).toLocaleString("en-US",{maximumFractionDigits:0});
-      return `<div class="trade-item">
-        <div class="trade-header">
-          <span class="trade-badge ${badgeCls}">${isBuy ? "買入" : "賣出"}</span>
-          <span class="trade-time">${toTW(r[0])}</span>
+    // 格式化輔助（Sheets 把 "-1.07%" 字串自動轉為數字 -0.0107）
+    function fmtPct(raw) {
+      if (raw === "" || raw === null || raw === undefined) return "";
+      if (typeof raw === "number") {
+        const p = raw * 100;
+        return (p >= 0 ? "+" : "") + p.toFixed(2) + "%";
+      }
+      return String(raw);
+    }
+    function fmtUSD(n) {
+      return "$" + parseFloat(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    function fmtP(n) {
+      return "$" + parseFloat(n || 0).toLocaleString("en-US", { maximumFractionDigits: 1 });
+    }
+    const COM = 0.001;
+    // 配對：trades 新→舊；遇到連續 SELL 跳過重複
+    const pairs = [];
+    let i = 0;
+    while (i < trades.length) {
+      const action = String(trades[i][1] || "").trim();
+      if (action === "SELL") {
+        let j = i + 1;
+        while (j < trades.length && String(trades[j][1] || "").trim() === "SELL") j++;
+        pairs.push({ sell: trades[i], buy: j < trades.length ? trades[j] : null });
+        i = j + 1;
+      } else {
+        pairs.push({ sell: null, buy: trades[i] });
+        i++;
+      }
+    }
+    tradeEl.innerHTML = pairs.map(p => {
+      const isOpen  = !p.sell;
+      const buy     = p.buy;
+      const sell    = p.sell;
+      const bPrice  = parseFloat(buy?.[2] || 0);
+      const sPrice  = parseFloat(sell?.[2] || 0);
+      const qty     = parseFloat(buy?.[3] || sell?.[3] || 0);
+      const cost    = bPrice * qty * (1 + COM);
+      const proc    = sPrice * qty * (1 - COM);
+      const pnlAmt  = proc - cost;
+      const pnlPct  = fmtPct(sell?.[4]);
+      const isWin   = pnlPct.startsWith("+");
+      const pnlCls  = pnlPct ? (isWin ? "green" : "red") : "";
+      const sBadge  = isWin ? "pb-sell-win" : "pb-sell-loss";
+      const reason  = sell ? sell[6] : (buy ? buy[6] : "");
+      return `<div class="pair-card ${isOpen ? 'open' : ''}">
+        <div class="pair-row">
+          <span class="pair-badge pb-buy">買入</span>
+          <div class="pair-info">
+            <div class="pair-price">${fmtP(bPrice)}</div>
+            <div class="pair-qty">數量 ${qty.toFixed(4)} &nbsp;·&nbsp; 成本 ${fmtUSD(cost)}</div>
+          </div>
+          <div class="pair-right">
+            <div class="pair-pnl" style="color:var(--sub);font-size:12px">進場</div>
+            <div class="pair-time">${buy ? toTW(buy[0]) : "—"}</div>
+          </div>
         </div>
-        <div class="trade-row">
-          <span class="trade-price">${priceFmt}</span>
-          <span class="trade-pnl ${pnlCls}">${isBuy ? "進場" : (pnlPct || "—")}</span>
-        </div>
-        ${r[6] ? `<div class="trade-reason">${r[6]}</div>` : ""}
+        ${isOpen
+          ? `<div class="pair-row"><span class="pair-badge pb-open">持倉中</span>
+             <div class="pair-info" style="color:var(--gold);font-size:13px">等待出場訊號</div></div>`
+          : `<div class="pair-row">
+               <span class="pair-badge ${sBadge}">賣出</span>
+               <div class="pair-info">
+                 <div class="pair-price">${fmtP(sPrice)}</div>
+                 <div class="pair-qty">所得 ${fmtUSD(proc)} &nbsp;·&nbsp; 損益 <span class="${pnlCls}">${fmtUSD(pnlAmt)}</span></div>
+               </div>
+               <div class="pair-right">
+                 <div class="pair-pnl ${pnlCls}">${pnlPct || "—"}</div>
+                 <div class="pair-time">${sell ? toTW(sell[0]) : "—"}</div>
+               </div>
+             </div>
+             ${reason ? `<div class="pair-reason">${reason}</div>` : ""}`
+        }
       </div>`;
     }).join("");
   }
