@@ -58,14 +58,10 @@ jobs:
             ICON="❌"; STATUS_TEXT="部署失敗（${RESULT}）"
           fi
 
-          MSG="${ICON} <b>${STATUS_TEXT}</b>
-提交：<code>${SHORT_SHA}</code>
-內容：${COMMIT_MSG}
-Dashboard：${RESULT}
-Apps Script：HTTP ${GS}
-🔗 https://kevinyee-yee.github.io/btc-trading-bot/"
+          MSG=$(printf '%s <b>%s</b>\n提交：<code>%s</code>\n內容：%s\nDashboard：%s\nApps Script：HTTP %s\n🔗 https://kevinyee-yee.github.io/btc-trading-bot/' \
+            "$ICON" "$STATUS_TEXT" "$SHORT_SHA" "$COMMIT_MSG" "$RESULT" "$GS")
 
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -d text="$MSG" \
+            --data-urlencode "text=$MSG" \
             -d parse_mode="HTML" || true
