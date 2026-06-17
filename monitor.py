@@ -124,7 +124,7 @@ def log_trade(action, price, qty, pnl_pct, reason, portfolio):
 # 抓數據 + 計算所有指標
 # ─────────────────────────────────────────────
 def fetch_and_calc():
-    exchange = ccxt.binance({"enableRateLimit": True})
+    exchange = ccxt.okx({"enableRateLimit": True})
     ohlcv = exchange.fetch_ohlcv(SYMBOL, TIMEFRAME, limit=120)
     df = pd.DataFrame(ohlcv, columns=["ts","open","high","low","close","volume"])
     df["ts"] = pd.to_datetime(df["ts"], unit="ms", utc=True)
