@@ -3,9 +3,10 @@
   "position": 0.0,
   "entry_price": 0.0,
   "entry_time": "",
-  "last_candle": "2026-06-17 14:45:00+00:00",
+  "last_candle": "2026-06-17 15:00:00+00:00",
   "total_trades": 2,
   "wins": 0,
   "losses": 2,
-  "total_pnl": -14.03860574259977
+  "total_pnl": -14.03860574259977,
+  "last_exit_candle": ""
 }
