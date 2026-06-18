@@ -36,8 +36,15 @@ EMA_SLOW        = 48
 COOLDOWN_BARS   = 4   # P1：出場後冷卻根數（B/ETH_B 用）
 
 # 策略唯一鍵（含標的前綴）
-ASSET     = "ETH" if "ETH" in SYMBOL else "BTC"
-STRAT_KEY = f"ETH_{STRATEGY}" if ASSET == "ETH" else STRATEGY
+if "ETH" in SYMBOL:
+    ASSET = "ETH"
+    STRAT_KEY = f"ETH_{STRATEGY}"
+elif "SOL" in SYMBOL:
+    ASSET = "SOL"
+    STRAT_KEY = f"SOL_{STRATEGY}"
+else:
+    ASSET = "BTC"
+    STRAT_KEY = STRATEGY
 
 PORTFOLIO_FILE  = "paper_portfolio.json" if STRAT_KEY == "A" else f"paper_portfolio_{STRAT_KEY.lower()}.json"
 TRADE_LOG_FILE  = "trade_log.csv"        if STRAT_KEY == "A" else f"trade_log_{STRAT_KEY.lower()}.csv"
@@ -49,6 +56,8 @@ STRATEGY_LABEL = {
     "D":     "BTC 策略D：MACD信號線",
     "ETH_B": "ETH 策略B：RSI(9)<40",
     "ETH_C": "ETH 策略C：EMA13/48",
+    "SOL_B": "SOL 策略B：RSI(9)<40",
+    "SOL_C": "SOL 策略C：EMA13/48",
 }
 
 FORCE_TEST = os.environ.get("FORCE_TEST", "")

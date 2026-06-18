@@ -146,6 +146,7 @@
     <div class="tab active" onclick="switchAsset('overview')">總覽</div>
     <div class="tab" onclick="switchAsset('BTC')">BTC</div>
     <div class="tab" onclick="switchAsset('ETH')">ETH</div>
+    <div class="tab" onclick="switchAsset('SOL')">SOL</div>
   </div>
 </div>
 
@@ -213,15 +214,16 @@
 const GS_URL = "https://script.google.com/macros/s/AKfycbya4n2VkmvWcc6Rswq2wWqA26w5Pa94xb3w-3DSjVyMYAE8_t-dRLFvJBOWS_hAmUg/exec";
 const STRATEGY_LABELS = {
   A:"BTC 布林+MACD+RSI", B:"BTC RSI(9)<40", C:"BTC EMA13/48", D:"BTC MACD信號線",
-  ETH_B:"ETH RSI(9)<40", ETH_C:"ETH EMA13/48"
+  ETH_B:"ETH RSI(9)<40", ETH_C:"ETH EMA13/48",
+  SOL_B:"SOL RSI(9)<40", SOL_C:"SOL EMA13/48"
 };
 
 let allData = null;
 let activeAsset = "overview";
 let activeStrat = "A";
 
-const ASSET_STRATS = { BTC: ["A","B","C","D"], ETH: ["ETH_B","ETH_C"] };
-const SUB_LABELS   = { A:"策略A", B:"策略B", C:"策略C", D:"策略D", ETH_B:"策略B", ETH_C:"策略C" };
+const ASSET_STRATS = { BTC: ["A","B","C","D"], ETH: ["ETH_B","ETH_C"], SOL: ["SOL_B","SOL_C"] };
+const SUB_LABELS   = { A:"策略A", B:"策略B", C:"策略C", D:"策略D", ETH_B:"策略B", ETH_C:"策略C", SOL_B:"策略B", SOL_C:"策略C" };
 
 function toTW(utcStr) {
   if (!utcStr) return "—";
@@ -244,7 +246,7 @@ function toTWDual(utcStr) {
 function switchAsset(asset) {
   activeAsset = asset;
   document.querySelectorAll(".tab").forEach((el, i) => {
-    el.classList.toggle("active", ["overview","BTC","ETH"][i] === asset);
+    el.classList.toggle("active", ["overview","BTC","ETH","SOL"][i] === asset);
   });
   document.getElementById("view-overview").classList.toggle("hidden", asset !== "overview");
   document.getElementById("view-detail").classList.toggle("hidden", asset === "overview");
@@ -277,6 +279,9 @@ function goToStrat(asset, strat) {
   });
   document.getElementById("view-overview").classList.add("hidden");
   document.getElementById("view-detail").classList.remove("hidden");
+  document.querySelectorAll(".tab").forEach((el, i) => {
+    el.classList.toggle("active", ["overview","BTC","ETH","SOL"][i] === asset);
+  });
   buildSubTabs(asset);
   if (allData) renderDetail(strat);
 }
@@ -288,8 +293,8 @@ function tsToMs(t) {
   return d.getTime();
 }
 function renderChart(data) {
-  const colors = { A:"#f5a623", B:"#34c759", C:"#5ac8fa", D:"#ff9500", ETH_B:"#bf5af2", ETH_C:"#ff3b30" };
-  const datasets = ["A","B","C","D","ETH_B","ETH_C"].map(s => {
+  const colors = { A:"#f5a623", B:"#34c759", C:"#5ac8fa", D:"#ff9500", ETH_B:"#bf5af2", ETH_C:"#ff3b30", SOL_B:"#00e5ff", SOL_C:"#76ff03" };
+  const datasets = ["A","B","C","D","ETH_B","ETH_C","SOL_B","SOL_C"].map(s => {
     const hist = data[s]?.history || [];
     return {
       label: STRATEGY_LABELS[s],
@@ -339,7 +344,7 @@ function renderOverview(data) {
     "資料時間：" + toTW(data.A?.dashboard?.["最後更新"]) + " 台灣時間";
 
   const grid = document.getElementById("overview-grid");
-  grid.innerHTML = ["A","B","C","D","ETH_B","ETH_C"].map(s => {
+  grid.innerHTML = ["A","B","C","D","ETH_B","ETH_C","SOL_B","SOL_C"].map(s => {
     const d   = data[s]?.dashboard || {};
     const ret = d["累計報酬"] || "0%";
     const retN = parseFloat(ret);
@@ -349,7 +354,7 @@ function renderOverview(data) {
     const trades = d["總交易次數"] || 0;
     const wr     = d["勝率"] || "—";
     const hasT   = parseInt(trades) > 0;
-    const asset  = s.startsWith('ETH') ? 'ETH' : 'BTC';
+    const asset  = s.startsWith('ETH') ? 'ETH' : s.startsWith('SOL') ? 'SOL' : 'BTC';
     return `<div class="ov-card" onclick="goToStrat('${asset}','${s}')">
       <div class="ov-label">策略${s}</div>
       <div class="ov-name">${STRATEGY_LABELS[s]}</div>
