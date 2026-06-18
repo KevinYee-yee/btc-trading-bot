@@ -182,6 +182,20 @@ function updateTrade(ss, data, strategy) {
     sh.setFrozenRows(1);
   }
 
+  // 冪等去重：同一分鐘內相同 action + 相近價格 = 視為重複，跳過
+  if (sh.getLastRow() > 1) {
+    const checkN  = Math.min(sh.getLastRow() - 1, 5);
+    const recent  = sh.getRange(sh.getLastRow() - checkN + 1, 1, checkN, 3).getValues();
+    const incomingTime = new Date(data.time).getTime();
+    const isDup = recent.some(r => {
+      const rowTime = new Date(String(r[0])).getTime();
+      return String(r[1]).trim() === String(data.action).trim() &&
+             Math.abs(parseFloat(r[2]) - parseFloat(data.price)) < 1 &&
+             Math.abs(rowTime - incomingTime) < 15 * 60 * 1000;
+    });
+    if (isDup) return;
+  }
+
   sh.appendRow([
     data.time, data.action, parseFloat(data.price), parseFloat(data.qty || 0),
     data.pnl_pct || "", parseFloat(data.capital_after || 0), data.reason || "",
