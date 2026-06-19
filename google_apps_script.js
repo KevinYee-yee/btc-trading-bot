@@ -6,7 +6,7 @@
 
 const SHEET_ID = "12ADUQmL9ZqoobVN4zRzhpR_rXRk2cKs4procf1IifSU";
 
-const STRATEGIES = ["A", "B", "C", "D", "ETH_B", "ETH_C", "SOL_B", "SOL_C"];
+const STRATEGIES = ["A", "B", "C", "D", "ETH_B", "ETH_C", "SOL_B", "SOL_C", "BTC_E"];
 const LABELS = {
   A:     "BTC 策略A：布林+MACD",
   B:     "BTC 策略B：RSI超賣",
@@ -16,6 +16,7 @@ const LABELS = {
   ETH_C: "ETH 策略C：EMA交叉",
   SOL_B: "SOL 策略B：RSI超賣",
   SOL_C: "SOL 策略C：EMA交叉",
+  BTC_E: "BTC 策略E：20日線波段",
 };
 
 function sheetName(strategy, type) {

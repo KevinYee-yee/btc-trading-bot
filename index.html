@@ -215,15 +215,16 @@ const GS_URL = "https://script.google.com/macros/s/AKfycbya4n2VkmvWcc6Rswq2wWqA2
 const STRATEGY_LABELS = {
   A:"BTC 布林+MACD+RSI", B:"BTC RSI(9)<40", C:"BTC EMA13/48", D:"BTC MACD信號線",
   ETH_B:"ETH RSI(9)<40", ETH_C:"ETH EMA13/48",
-  SOL_B:"SOL RSI(9)<40", SOL_C:"SOL EMA13/48"
+  SOL_B:"SOL RSI(9)<40", SOL_C:"SOL EMA13/48",
+  BTC_E:"BTC 20日線波段"
 };
 
 let allData = null;
 let activeAsset = "overview";
 let activeStrat = "A";
 
-const ASSET_STRATS = { BTC: ["A","B","C","D"], ETH: ["ETH_B","ETH_C"], SOL: ["SOL_B","SOL_C"] };
-const SUB_LABELS   = { A:"策略A", B:"策略B", C:"策略C", D:"策略D", ETH_B:"策略B", ETH_C:"策略C", SOL_B:"策略B", SOL_C:"策略C" };
+const ASSET_STRATS = { BTC: ["A","B","C","D","BTC_E"], ETH: ["ETH_B","ETH_C"], SOL: ["SOL_B","SOL_C"] };
+const SUB_LABELS   = { A:"策略A", B:"策略B", C:"策略C", D:"策略D", ETH_B:"策略B", ETH_C:"策略C", SOL_B:"策略B", SOL_C:"策略C", BTC_E:"策略E波段" };
 
 function toTW(utcStr) {
   if (!utcStr) return "—";
@@ -293,8 +294,8 @@ function tsToMs(t) {
   return d.getTime();
 }
 function renderChart(data) {
-  const colors = { A:"#f5a623", B:"#34c759", C:"#5ac8fa", D:"#ff9500", ETH_B:"#bf5af2", ETH_C:"#ff3b30", SOL_B:"#00e5ff", SOL_C:"#76ff03" };
-  const datasets = ["A","B","C","D","ETH_B","ETH_C","SOL_B","SOL_C"].map(s => {
+  const colors = { A:"#f5a623", B:"#34c759", C:"#5ac8fa", D:"#ff9500", ETH_B:"#bf5af2", ETH_C:"#ff3b30", SOL_B:"#00e5ff", SOL_C:"#76ff03", BTC_E:"#ff6b9d" };
+  const datasets = ["A","B","C","D","ETH_B","ETH_C","SOL_B","SOL_C","BTC_E"].map(s => {
     const hist = data[s]?.history || [];
     return {
       label: STRATEGY_LABELS[s],
@@ -344,7 +345,7 @@ function renderOverview(data) {
     "資料時間：" + toTW(data.A?.dashboard?.["最後更新"]) + " 台灣時間";
 
   const grid = document.getElementById("overview-grid");
-  grid.innerHTML = ["A","B","C","D","ETH_B","ETH_C","SOL_B","SOL_C"].map(s => {
+  grid.innerHTML = ["A","B","C","D","ETH_B","ETH_C","SOL_B","SOL_C","BTC_E"].map(s => {
     const d   = data[s]?.dashboard || {};
     const ret = d["累計報酬"] || "0%";
     const retN = parseFloat(ret);
