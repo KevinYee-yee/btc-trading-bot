@@ -8,5 +8,6 @@
   "wins": 2,
   "losses": 7,
   "total_pnl": -53.227008987745194,
-  "last_exit_candle": "2026-06-18 04:00:00+00:00"
+  "last_exit_candle": "2026-06-18 04:00:00+00:00",
+  "consecutive_losses": 7
 }

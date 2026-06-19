@@ -105,12 +105,13 @@ def sheets_post(payload):
 def load_portfolio():
     if os.path.exists(PORTFOLIO_FILE):
         p = json.load(open(PORTFOLIO_FILE))
-        p.setdefault("last_exit_candle", "")  # P1：冷卻期用
+        p.setdefault("last_exit_candle", "")
+        p.setdefault("consecutive_losses", 0)  # 連敗熔斷計數
         return p
     return {"capital": INITIAL_CAPITAL, "position": 0.0, "entry_price": 0.0,
             "entry_time": "", "last_candle": "", "total_trades": 0,
             "wins": 0, "losses": 0, "total_pnl": 0.0,
-            "last_exit_candle": ""}
+            "last_exit_candle": "", "consecutive_losses": 0}
 
 def save_portfolio(p):
     with open(PORTFOLIO_FILE, "w") as f:
@@ -186,9 +187,9 @@ def get_entry_signal(df, latest):
 
     elif STRATEGY == "B":
         rsi = latest["rsi"]
-        # P2：EMA48 趨勢過濾，只在上升趨勢中做多
+        # EMA48 趨勢過濾：20根K棒（5小時）確認上升，避免下跌趨勢接刀
         ema_s_now  = df["ema_s"].iloc[-2]
-        ema_s_prev = df["ema_s"].iloc[-6]  # 4根前
+        ema_s_prev = df["ema_s"].iloc[-20]
         trend_up   = ema_s_now > ema_s_prev
         ok = rsi < RSI_BUY and trend_up
         return ok, f"RSI(9) {rsi:.1f}", f"{'✅' if rsi < RSI_BUY else '❌'}<{RSI_BUY} EMA48趨勢{'✅' if trend_up else '❌'}"
@@ -226,12 +227,11 @@ def get_exit_reason(df, latest, portfolio):
 
     elif STRATEGY == "B":
         rsi = latest["rsi"]
-        # P1：RSI>62 需同時確認有獲利（+0.3%）才出場
         if rsi > RSI_SELL and price > entry_price * 1.003:
             return f"RSI(9)>{RSI_SELL}超買出場（獲利確認）"
-        # P1：縮小停損從 8% 改為 2%
-        if price < entry_price * 0.98:
-            return "跌幅超過2%停損"
+        # 停損 1.5%（收緊自 2%，減少單次最大損失）
+        if price < entry_price * 0.985:
+            return "跌幅超過1.5%停損"
 
     elif STRATEGY == "C":
         ef_now,  es_now  = df["ema_f"].iloc[-2], df["ema_s"].iloc[-2]
@@ -296,6 +296,19 @@ def run():
         if reason:
             _execute_sell(df, latest, portfolio, price, bb_upper, bb_lower, reason, now_time)
             return
+
+    # ── 連敗熔斷（B策略）─────────────────────
+    CIRCUIT_BREAKER = 3
+    if STRATEGY == "B" and portfolio.get("consecutive_losses", 0) >= CIRCUIT_BREAKER:
+        print(f"  🚫 熔斷中（連敗 {portfolio['consecutive_losses']} 次）跳過進場")
+        save_portfolio(portfolio)
+        sheets_post({
+            "type": "monitor_log", "time": now_time, "price": str(price),
+            "bb_upper": str(bb_upper), "bb_lower": str(bb_lower),
+            "recent_low": str(recent_low), "cond_bb": "熔斷", "cond_macd": f"連敗{portfolio['consecutive_losses']}次",
+            "signal": "熔斷暫停", "account_status": "空倉（熔斷）", "portfolio": portfolio,
+        })
+        return
 
     # ── P1：冷卻期檢查（B/ETH_B 用）────────
     in_cooldown = False
@@ -374,8 +387,12 @@ def _execute_sell(df, latest, portfolio, price, bb_upper, bb_lower, reason, now_
     portfolio["last_exit_candle"] = str(latest.name)  # P1：記錄出場K線供冷卻期用
     portfolio["total_trades"]   += 1
     portfolio["total_pnl"]      += pnl
-    if pnl > 0: portfolio["wins"]   += 1
-    else:        portfolio["losses"] += 1
+    if pnl > 0:
+        portfolio["wins"]             += 1
+        portfolio["consecutive_losses"] = 0
+    else:
+        portfolio["losses"]           += 1
+        portfolio["consecutive_losses"] = portfolio.get("consecutive_losses", 0) + 1
     log_trade("SELL", price, qty, pnl_pct, reason, portfolio)
     save_portfolio(portfolio)
     sheets_post({"type":"trade","time":now_time,"action":"SELL","price":str(price),
