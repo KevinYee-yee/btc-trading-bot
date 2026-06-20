@@ -226,9 +226,9 @@ def get_exit_reason(df, latest, portfolio):
 
     elif STRATEGY == "B":
         rsi = latest["rsi"]
-        if rsi > RSI_SELL and price > entry_price * 1.003:
-            return f"RSI(9)>{RSI_SELL}超買出場（獲利確認）"
-        # 停損 1.5%（收緊自 2%，減少單次最大損失）
+        # 止盈：需達 +1% 以上才出場（Martin Luk R:R 原則，確保贏面大於手續費）
+        if rsi > RSI_SELL and price > entry_price * 1.010:
+            return f"RSI(9)>{RSI_SELL}超買出場（獲利≥1%確認）"
         if price < entry_price * 0.985:
             return "跌幅超過1.5%停損"
 
@@ -237,12 +237,14 @@ def get_exit_reason(df, latest, portfolio):
         ef_prev, es_prev = df["ema_f"].iloc[-3], df["ema_s"].iloc[-3]
         if (ef_now < es_now) and (ef_prev >= es_prev):
             return f"EMA{EMA_FAST}/{EMA_SLOW}死叉賣出"
-        if price < entry_price * 0.92:   return "跌幅超過8%停損"
+        # 全域5%停損已在上方處理，此為C策略額外保護（3%）
+        if price < entry_price * 0.97:   return "跌幅超過3%停損（策略C）"
 
     elif STRATEGY == "D":
         sig_death = df["macd_sig_death"].iloc[-2]
         if sig_death:                    return "MACD信號線死叉賣出"
-        if price < entry_price * 0.92:   return "跌幅超過8%停損"
+        # 全域5%停損已在上方處理，此為D策略額外保護（3%）
+        if price < entry_price * 0.97:   return "跌幅超過3%停損（策略D）"
 
     return None
 
