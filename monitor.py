@@ -216,14 +216,13 @@ def get_exit_reason(df, latest, portfolio):
     price       = latest["close"]
     entry_price = portfolio["entry_price"]
 
-    # 10% 硬性停損（所有策略共用）
-    if price < entry_price * 0.90:
-        return "跌幅超過10%強制停損"
+    # 5% 硬性停損（所有策略共用，最後防線）
+    if price < entry_price * 0.95:
+        return "跌幅超過5%強制停損"
 
     if STRATEGY == "A":
-        recent_low = df["low"].iloc[-(SL_LOOKBACK + 2):-1].min()
-        if price >= latest["bb_upper"]:  return "觸及布林上軌停利"
-        if price < recent_low:           return "跌破近期低點停損"
+        if price >= latest["bb_upper"]:   return "觸及布林上軌停利"
+        if price < latest["bb_lower"]:    return "跌破布林下軌停損（動態）"
 
     elif STRATEGY == "B":
         rsi = latest["rsi"]
