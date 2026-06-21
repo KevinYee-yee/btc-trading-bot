@@ -34,6 +34,7 @@ RSI_SELL        = 62
 EMA_FAST        = 13
 EMA_SLOW        = 48
 COOLDOWN_BARS   = 4   # P1：出場後冷卻根數（B/ETH_B 用）
+EMA_TREND_BARS  = 48  # 策略B趨勢過濾 lookback（根）：原20根(5h)→48根(12h)，2026-06-21 5人會議
 
 # 策略唯一鍵（含標的前綴）
 if "ETH" in SYMBOL:
@@ -189,7 +190,7 @@ def get_entry_signal(df, latest):
         rsi = latest["rsi"]
         # EMA48 趨勢過濾：20根K棒（5小時）確認上升，避免下跌趨勢接刀
         ema_s_now  = df["ema_s"].iloc[-2]
-        ema_s_prev = df["ema_s"].iloc[-20]
+        ema_s_prev = df["ema_s"].iloc[-EMA_TREND_BARS]
         trend_up   = ema_s_now > ema_s_prev
         ok = rsi < RSI_BUY and trend_up
         return ok, f"RSI(9) {rsi:.1f}", f"{'✅' if rsi < RSI_BUY else '❌'}<{RSI_BUY} EMA48趨勢{'✅' if trend_up else '❌'}"
