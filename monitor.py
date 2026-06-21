@@ -311,9 +311,9 @@ def run():
         })
         return
 
-    # ── P1：冷卻期檢查（B/ETH_B 用）────────
+    # ── 冷卻期檢查（B/ETH_B + D 用）────────
     in_cooldown = False
-    if STRATEGY == "B":
+    if STRATEGY in ("B", "D"):
         last_exit = portfolio.get("last_exit_candle", "")
         if last_exit:
             try:
