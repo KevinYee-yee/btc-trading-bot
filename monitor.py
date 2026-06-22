@@ -243,7 +243,9 @@ def get_exit_reason(df, latest, portfolio):
 
     elif STRATEGY == "D":
         sig_death = df["macd_sig_death"].iloc[-2]
-        if sig_death:                    return "MACD信號線死叉賣出"
+        rsi_d = latest["rsi"]
+        # 需 MACD死叉 + RSI>55 雙重確認，避免震盪假死叉截斷獲利（2026-06-22 5人會議 3/5）
+        if sig_death and rsi_d > 55:     return f"MACD死叉且RSI({rsi_d:.0f})>55賣出"
         # 全域5%停損已在上方處理，此為D策略額外保護（3%）
         if price < entry_price * 0.97:   return "跌幅超過3%停損（策略D）"
 
