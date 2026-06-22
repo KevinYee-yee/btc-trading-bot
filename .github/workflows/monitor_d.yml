@@ -46,4 +46,4 @@ jobs:
           git add trade_log_d.csv 2>/dev/null || true
           git diff --cached --quiet || git commit -m "📊D $(date -u '+%Y-%m-%d %H:%M UTC') 策略D更新"
           git pull --rebase origin main
-          git push
+          git push || (git pull --rebase origin main && git push)

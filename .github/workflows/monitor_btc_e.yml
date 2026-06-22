@@ -45,4 +45,4 @@ jobs:
           git add trade_log_btc_e.csv 2>/dev/null || true
           git diff --cached --quiet || git commit -m "📊BTC-E $(date -u '+%Y-%m-%d') 日線更新"
           git pull --rebase origin main
-          git push
+          git push || (git pull --rebase origin main && git push)

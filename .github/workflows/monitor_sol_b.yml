@@ -47,4 +47,4 @@ jobs:
           git add trade_log_sol_b.csv 2>/dev/null || true
           git diff --cached --quiet || git commit -m "📊SOL-B $(date -u '+%Y-%m-%d %H:%M UTC') 更新"
           git pull --rebase origin main
-          git push
+          git push || (git pull --rebase origin main && git push)
