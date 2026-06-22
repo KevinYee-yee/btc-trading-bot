@@ -67,6 +67,89 @@ TG_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 GS_WEBHOOK = os.environ.get("GS_WEBHOOK", "https://script.google.com/macros/s/AKfycbywcYNXYwDN6Z70F0-1nxVj6f3nzqyyoiugO_Mkiy5LPjXbFb5RP126d79VgqjnWlwJ/exec")
 
 # ─────────────────────────────────────────────
+# 實盤設定（預設關閉，LIVE_TRADE=true 才啟動）
+# ─────────────────────────────────────────────
+LIVE_TRADE     = os.environ.get("LIVE_TRADE", "false").lower() == "true"
+LIVE_CAPITAL   = float(os.environ.get("LIVE_CAPITAL", "100"))  # 每次下單的真實 USDT 金額
+OKX_API_KEY    = os.environ.get("OKX_API_KEY", "")
+OKX_SECRET     = os.environ.get("OKX_SECRET", "")
+OKX_PASSPHRASE = os.environ.get("OKX_PASSPHRASE", "")
+
+live_exchange = None
+if LIVE_TRADE:
+    if not OKX_API_KEY:
+        raise RuntimeError("LIVE_TRADE=true 但 OKX_API_KEY 未設定，請加入 GitHub Secrets")
+    live_exchange = ccxt.okx({
+        "apiKey":          OKX_API_KEY,
+        "secret":          OKX_SECRET,
+        "password":        OKX_PASSPHRASE,
+        "enableRateLimit": True,
+    })
+
+# ─────────────────────────────────────────────
+# 緊急停止 & 實盤輔助函數（缺口3/4/5/6/7）
+# ─────────────────────────────────────────────
+EMERGENCY_STOP_FILE = "emergency_stop"
+
+def check_emergency_stop():
+    """缺口7：emergency_stop 檔案存在時跳過所有操作"""
+    if os.path.exists(EMERGENCY_STOP_FILE):
+        msg = f"🛑 [{STRAT_KEY}] 緊急停止啟用（emergency_stop 存在），本次跳過"
+        print(f"  {msg}")
+        return True
+    return False
+
+def _live_check_balance():
+    """缺口4：進場前確認 OKX USDT 餘額 >= LIVE_CAPITAL"""
+    try:
+        bal = live_exchange.fetch_balance()
+        usdt_free = float(bal.get("USDT", {}).get("free", 0))
+        if usdt_free < LIVE_CAPITAL * 0.95:
+            notify(f"⚠️ [{STRAT_KEY}] USDT 餘額不足：帳戶 {usdt_free:.2f} < 需要 {LIVE_CAPITAL:.2f}")
+            return False
+        return True
+    except Exception as e:
+        notify(f"🚨 [{STRAT_KEY}] 餘額查詢失敗：{e}")
+        return False
+
+def _live_get_position_qty():
+    """缺口6：從 OKX 讀取當前標的真實持倉量"""
+    try:
+        bal = live_exchange.fetch_balance()
+        return float(bal.get(ASSET, {}).get("free", 0))
+    except Exception as e:
+        notify(f"🚨 [{STRAT_KEY}] 持倉查詢失敗：{e}")
+        return None
+
+def _live_place_order(side, qty):
+    """缺口1/3：送出市價單，失敗通知並回傳 None"""
+    try:
+        if side == "buy":
+            return live_exchange.create_market_buy_order(SYMBOL, qty)
+        else:
+            return live_exchange.create_market_sell_order(SYMBOL, qty)
+    except Exception as e:
+        notify(f"🚨 [{STRAT_KEY}] 下單失敗（{side} {qty:.6f} {SYMBOL}）：{e}")
+        return None
+
+def _live_sync_position(portfolio):
+    """缺口5：啟動時核對交易所持倉與 JSON 是否一致"""
+    exchange_qty = _live_get_position_qty()
+    if exchange_qty is None:
+        return portfolio
+    json_qty  = portfolio.get("position", 0)
+    threshold = 0.0001
+    if exchange_qty > threshold and json_qty <= threshold:
+        notify(f"⚠️ [{STRAT_KEY}] 不一致：交易所有 {exchange_qty:.6f} {ASSET}，JSON 空倉，請手動核對")
+    elif exchange_qty <= threshold and json_qty > threshold:
+        notify(f"⚠️ [{STRAT_KEY}] 不一致：JSON 有持倉但交易所無 {ASSET}，自動重置 JSON 為空倉")
+        portfolio["position"]    = 0.0
+        portfolio["entry_price"] = 0.0
+        portfolio["entry_time"]  = ""
+        save_portfolio(portfolio)
+    return portfolio
+
+# ─────────────────────────────────────────────
 # 工具函數
 # ─────────────────────────────────────────────
 def notify(msg):
@@ -261,7 +344,13 @@ def run():
     print(f"  📡 {label}  |  {now_str}")
     print(f"{'='*55}")
 
+    if check_emergency_stop():
+        return
+
     portfolio = load_portfolio()
+    if LIVE_TRADE:
+        portfolio = _live_sync_position(portfolio)
+
     df        = fetch_and_calc()
     latest    = df.iloc[-2]
     candle_time = str(latest.name)
@@ -354,6 +443,18 @@ def run():
 
 def _execute_buy(df, latest, portfolio, price, bb_upper, bb_lower, recent_low,
                  now_time, reason, cond1, cond2):
+    # 缺口1/2/3/4：實盤下單（先下單成功才更新 portfolio）
+    if LIVE_TRADE:
+        if not _live_check_balance():
+            print("  ❌ 餘額不足，取消本次進場")
+            return
+        live_qty = round(LIVE_CAPITAL / price, 6)
+        order = _live_place_order("buy", live_qty)
+        if order is None:
+            print("  ❌ 實盤下單失敗，取消本次進場")
+            return
+        print(f"  ✅ 【實盤】買入 {live_qty} {ASSET} @ ${price:,.2f}")
+
     qty = portfolio["capital"] / price / (1 + COMMISSION)
     portfolio["position"]    = qty
     portfolio["entry_price"] = price
@@ -369,14 +470,30 @@ def _execute_buy(df, latest, portfolio, price, bb_upper, bb_lower, recent_low,
                  "bb_upper":str(bb_upper),"bb_lower":str(bb_lower),"recent_low":str(recent_low),
                  "cond_bb":cond1,"cond_macd":cond2,"signal":"進場","account_status":"持倉",
                  "portfolio":portfolio})
-    notify(f"🔔 <b>進場｜{STRATEGY_LABEL.get(STRAT_KEY)}</b>\n"
+    label_prefix = "🔴 【實盤】" if LIVE_TRADE else "🔔"
+    notify(f"{label_prefix} <b>進場｜{STRATEGY_LABEL.get(STRAT_KEY)}</b>\n"
            f"進場價：<b>${price:,.2f}</b>\n"
-           f"模擬買入：{qty:.6f}\n"
+           f"{'實盤' if LIVE_TRADE else '模擬'}買入：{(round(LIVE_CAPITAL/price,6) if LIVE_TRADE else qty):.6f} {ASSET}\n"
            f"原因：{reason}")
     print(f"  🔔 買入 {qty:.6f} @ ${price:,.2f}")
 
 
 def _execute_sell(df, latest, portfolio, price, bb_upper, bb_lower, reason, now_time):
+    # 缺口1/3/6：實盤賣出（先賣成功才更新 portfolio；失敗保留持倉等下次重試）
+    if LIVE_TRADE:
+        live_qty = _live_get_position_qty()
+        if live_qty is None:
+            print("  ❌ 無法取得持倉，保留狀態待下次重試")
+            return
+        if live_qty > 0.0001:
+            order = _live_place_order("sell", live_qty)
+            if order is None:
+                print("  ❌ 實盤賣出失敗，保留持倉狀態待下次重試")
+                return
+            print(f"  ✅ 【實盤】賣出 {live_qty} {ASSET} @ ${price:,.2f}")
+        else:
+            notify(f"⚠️ [{STRAT_KEY}] 交易所無 {ASSET} 持倉，跳過真實賣出，更新模擬狀態")
+
     qty         = portfolio["position"]
     entry_price = portfolio["entry_price"]
     sell_value  = qty * price * (1 - COMMISSION)
@@ -403,7 +520,8 @@ def _execute_sell(df, latest, portfolio, price, bb_upper, bb_lower, reason, now_
                  "qty":str(qty),"pnl_pct":f"{pnl_pct:+.2f}%","capital_after":str(portfolio["capital"]),
                  "reason":reason,"portfolio":portfolio,"bb_upper":str(bb_upper),"bb_lower":str(bb_lower)})
     icon = "🟢" if pnl > 0 else "🔴"
-    notify(f"{icon} <b>出場｜{STRATEGY_LABEL.get(STRAT_KEY)}</b>\n"
+    live_tag = " 【實盤】" if LIVE_TRADE else ""
+    notify(f"{icon}{live_tag} <b>出場｜{STRATEGY_LABEL.get(STRAT_KEY)}</b>\n"
            f"進場：${entry_price:,.2f} → 出場：${price:,.2f}\n"
            f"損益：<b>{pnl_pct:+.2f}%（{pnl:+.2f} USDT）</b>\n"
            f"原因：{reason}")
