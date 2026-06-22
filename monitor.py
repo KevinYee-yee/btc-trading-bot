@@ -52,12 +52,12 @@ TRADE_LOG_FILE  = "trade_log.csv"        if STRAT_KEY == "A" else f"trade_log_{S
 
 STRATEGY_LABEL = {
     "A":     "BTC 策略A：布林+MACD+RSI",
-    "B":     "BTC 策略B：RSI(9)<40",
+    "B":     "BTC 策略B：RSI(9)&lt;40",
     "C":     "BTC 策略C：EMA13/48",
     "D":     "BTC 策略D：MACD信號線",
-    "ETH_B": "ETH 策略B：RSI(9)<40",
+    "ETH_B": "ETH 策略B：RSI(9)&lt;40",
     "ETH_C": "ETH 策略C：EMA13/48",
-    "SOL_B": "SOL 策略B：RSI(9)<40",
+    "SOL_B": "SOL 策略B：RSI(9)&lt;40",
     "SOL_C": "SOL 策略C：EMA13/48",
 }
 
