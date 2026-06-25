@@ -26,10 +26,9 @@ TIMEFRAME       = "15m"
 INITIAL_CAPITAL = 1000.0
 COMMISSION      = 0.001    # OKX 永續合約 taker fee
 
-# 做空出場條件
-SHORT_TP_PCT    = 0.96     # 止盈：跌4%（price <= entry * 0.96）
-SHORT_SL_PCT    = 1.02     # 止損：漲2%（price >= entry * 1.02）
-RSI_COVER_LEVEL = 25       # RSI超賣覆蓋
+# 做空出場條件（無固定止盈，由訊號決定）
+SHORT_SL_PCT    = 1.02     # 止損：漲2%（唯一硬性出場）
+RSI_COVER_LEVEL = 25       # RSI超賣覆蓋（極端情況保護）
 COOLDOWN_BARS   = 4        # 出場後冷卻4根K（60分鐘）
 
 # 技術指標參數
@@ -182,9 +181,6 @@ def get_short_exit_reason(df, latest, portfolio):
     entry_price = portfolio["entry_price"]
     rsi         = latest["rsi"]
 
-    if price <= entry_price * SHORT_TP_PCT:
-        return f"跌幅達4%止盈（${price:,.2f}）"
-
     if price >= entry_price * SHORT_SL_PCT:
         return f"上漲超過2%止損（${price:,.2f}）"
 
@@ -219,7 +215,7 @@ def _execute_short(df, latest, portfolio, price, now_time, reason, c1, c2):
     notify(f"🔻 <b>做空進場｜BTC短策略</b>\n"
            f"進場價：<b>${price:,.2f}</b>\n"
            f"空單數量：{qty:.6f} BTC\n"
-           f"止損：${price*SHORT_SL_PCT:,.0f}（+2%）｜止盈：${price*SHORT_TP_PCT:,.0f}（-4%）\n"
+           f"止損：${price*SHORT_SL_PCT:,.0f}（+2%）｜出場由EMA金叉/RSI訊號決定\n"
            f"原因：{reason}")
     print(f"  🔻 做空 {qty:.6f} BTC @ ${price:,.2f}")
 

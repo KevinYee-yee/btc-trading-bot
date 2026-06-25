@@ -316,9 +316,8 @@ def get_exit_reason(df, latest, portfolio):
 
     elif STRATEGY == "B":
         rsi = latest["rsi"]
-        # 止盈：需達 +1% 以上才出場（Martin Luk R:R 原則，確保贏面大於手續費）
-        if rsi > RSI_SELL and price > entry_price * 1.010:
-            return f"RSI(9)>{RSI_SELL}超買出場（獲利≥1%確認）"
+        if rsi > RSI_SELL:
+            return f"RSI(9)>{RSI_SELL}超買出場"
         if price < entry_price * 0.985:
             return "跌幅超過1.5%停損"
 
