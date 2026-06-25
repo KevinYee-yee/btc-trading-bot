@@ -271,12 +271,18 @@ def get_entry_signal(df, latest):
 
     elif STRATEGY == "B":
         rsi = latest["rsi"]
-        # EMA48 趨勢過濾：20根K棒（5小時）確認上升，避免下跌趨勢接刀
+        # EMA48 趨勢過濾：確認上升趨勢，避免下跌趨勢接刀
         ema_s_now  = df["ema_s"].iloc[-2]
         ema_s_prev = df["ema_s"].iloc[-EMA_TREND_BARS]
         trend_up   = ema_s_now > ema_s_prev
-        ok = rsi < RSI_BUY and trend_up
-        return ok, f"RSI(9) {rsi:.1f}", f"{'✅' if rsi < RSI_BUY else '❌'}<{RSI_BUY} EMA48趨勢{'✅' if trend_up else '❌'}"
+        # 支撐破位過濾：收盤低於近48根最低點 = 跌破支撐 = 不接刀
+        recent_support = df["low"].iloc[-50:-3].min()
+        above_support  = latest["close"] > recent_support
+        ok = rsi < RSI_BUY and trend_up and above_support
+        c2 = (f"{'✅' if rsi < RSI_BUY else '❌'}&lt;{RSI_BUY} "
+              f"EMA48{'✅' if trend_up else '❌'} "
+              f"支撐{'✅' if above_support else '❌跌破'}")
+        return ok, f"RSI(9) {rsi:.1f}", c2
 
     elif STRATEGY == "C":
         ef_now,  es_now  = df["ema_f"].iloc[-2], df["ema_s"].iloc[-2]
