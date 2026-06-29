@@ -1,13 +1,13 @@
 {
-  "capital": 0.0,
-  "position": 0.017014114455357925,
-  "entry_price": 59213.6,
-  "entry_time": "2026-06-29 00:15:00+00:00",
-  "last_candle": "2026-06-29 02:45:00+00:00",
-  "total_trades": 4,
-  "wins": 3,
+  "capital": 1019.9806940672562,
+  "position": 0.0,
+  "entry_price": 0.0,
+  "entry_time": "",
+  "last_candle": "2026-06-29 03:00:00+00:00",
+  "total_trades": 5,
+  "wins": 4,
   "losses": 1,
-  "total_pnl": 8.474434681496064,
-  "last_exit_candle": "2026-06-28 05:00:00+00:00",
-  "consecutive_losses": 1
+  "total_pnl": 19.98069406725665,
+  "last_exit_candle": "2026-06-29 03:00:00+00:00",
+  "consecutive_losses": 0
 }
