@@ -47,8 +47,13 @@ else:
     ASSET = "BTC"
     STRAT_KEY = STRATEGY
 
-PORTFOLIO_FILE  = "paper_portfolio.json" if STRAT_KEY == "A" else f"paper_portfolio_{STRAT_KEY.lower()}.json"
-TRADE_LOG_FILE  = "trade_log.csv"        if STRAT_KEY == "A" else f"trade_log_{STRAT_KEY.lower()}.csv"
+# 實盤用獨立檔案，與模擬完全隔離，避免 GitHub Actions 覆蓋真實倉位
+if LIVE_TRADE:
+    _prefix        = "live"
+else:
+    _prefix        = "paper"
+PORTFOLIO_FILE  = f"{_prefix}_portfolio.json" if STRAT_KEY == "A" else f"{_prefix}_portfolio_{STRAT_KEY.lower()}.json"
+TRADE_LOG_FILE  = f"{_prefix}_trade_log.csv"  if STRAT_KEY == "A" else f"{_prefix}_trade_log_{STRAT_KEY.lower()}.csv"
 
 STRATEGY_LABEL = {
     "A":     "BTC 策略A：布林+MACD+RSI",
