@@ -62,7 +62,7 @@ def notify(msg):
     try:
         url  = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
         data = urllib.parse.urlencode({
-            "chat_id": TG_CHAT_ID, "text": msg, "parse_mode": "HTML"
+            "chat_id": TG_CHAT_ID, "text": msg
         }).encode()
         urllib.request.urlopen(url, data, timeout=10)
     except Exception as e:

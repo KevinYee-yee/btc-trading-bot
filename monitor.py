@@ -157,7 +157,7 @@ def notify(msg):
         return
     try:
         url  = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-        data = urllib.parse.urlencode({"chat_id": TG_CHAT_ID, "text": msg, "parse_mode": "HTML"}).encode()
+        data = urllib.parse.urlencode({"chat_id": TG_CHAT_ID, "text": msg}).encode()
         urllib.request.urlopen(url, data, timeout=10)
     except Exception as e:
         print(f"  ⚠️ Telegram 失敗：{e}")
@@ -476,8 +476,8 @@ def _execute_buy(df, latest, portfolio, price, bb_upper, bb_lower, recent_low,
                  "cond_bb":cond1,"cond_macd":cond2,"signal":"進場","account_status":"持倉",
                  "portfolio":portfolio})
     label_prefix = "🔴 【實盤】" if LIVE_TRADE else "🔔"
-    notify(f"{label_prefix} <b>進場｜{STRATEGY_LABEL.get(STRAT_KEY)}</b>\n"
-           f"進場價：<b>${price:,.2f}</b>\n"
+    notify(f"{label_prefix} 進場｜{STRATEGY_LABEL.get(STRAT_KEY)}\n"
+           f"進場價：${price:,.2f}\n"
            f"{'實盤' if LIVE_TRADE else '模擬'}買入：{(round(LIVE_CAPITAL/price,6) if LIVE_TRADE else qty):.6f} {ASSET}\n"
            f"原因：{reason}")
     print(f"  🔔 買入 {qty:.6f} @ ${price:,.2f}")
@@ -526,9 +526,9 @@ def _execute_sell(df, latest, portfolio, price, bb_upper, bb_lower, reason, now_
                  "reason":reason,"portfolio":portfolio,"bb_upper":str(bb_upper),"bb_lower":str(bb_lower)})
     icon = "🟢" if pnl > 0 else "🔴"
     live_tag = " 【實盤】" if LIVE_TRADE else ""
-    notify(f"{icon}{live_tag} <b>出場｜{STRATEGY_LABEL.get(STRAT_KEY)}</b>\n"
+    notify(f"{icon}{live_tag} 出場｜{STRATEGY_LABEL.get(STRAT_KEY)}\n"
            f"進場：${entry_price:,.2f} → 出場：${price:,.2f}\n"
-           f"損益：<b>{pnl_pct:+.2f}%（{pnl:+.2f} USDT）</b>\n"
+           f"損益：{pnl_pct:+.2f}%（{pnl:+.2f} USDT）\n"
            f"原因：{reason}")
     print(f"  {icon} 賣出 @ ${price:,.2f}  損益：{pnl_pct:+.2f}%  原因：{reason}")
 
