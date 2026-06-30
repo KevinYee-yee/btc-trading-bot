@@ -47,14 +47,6 @@ else:
     ASSET = "BTC"
     STRAT_KEY = STRATEGY
 
-# 實盤用獨立檔案，與模擬完全隔離，避免 GitHub Actions 覆蓋真實倉位
-if LIVE_TRADE:
-    _prefix        = "live"
-else:
-    _prefix        = "paper"
-PORTFOLIO_FILE  = f"{_prefix}_portfolio.json" if STRAT_KEY == "A" else f"{_prefix}_portfolio_{STRAT_KEY.lower()}.json"
-TRADE_LOG_FILE  = f"{_prefix}_trade_log.csv"  if STRAT_KEY == "A" else f"{_prefix}_trade_log_{STRAT_KEY.lower()}.csv"
-
 STRATEGY_LABEL = {
     "A":     "BTC 策略A：布林+MACD+RSI",
     "B":     "BTC 策略B：RSI(9)&lt;40",
@@ -75,10 +67,15 @@ GS_WEBHOOK = os.environ.get("GS_WEBHOOK", "https://script.google.com/macros/s/AK
 # 實盤設定（預設關閉，LIVE_TRADE=true 才啟動）
 # ─────────────────────────────────────────────
 LIVE_TRADE     = os.environ.get("LIVE_TRADE", "false").lower() == "true"
-LIVE_CAPITAL   = float(os.environ.get("LIVE_CAPITAL", "100"))  # 每次下單的真實 USDT 金額
+LIVE_CAPITAL   = float(os.environ.get("LIVE_CAPITAL", "100"))
 OKX_API_KEY    = os.environ.get("OKX_API_KEY", "")
 OKX_SECRET     = os.environ.get("OKX_SECRET", "")
 OKX_PASSPHRASE = os.environ.get("OKX_PASSPHRASE", "")
+
+# 實盤用獨立檔案，與模擬完全隔離，避免 GitHub Actions 覆蓋真實倉位
+_prefix        = "live" if LIVE_TRADE else "paper"
+PORTFOLIO_FILE = f"{_prefix}_portfolio.json" if STRAT_KEY == "A" else f"{_prefix}_portfolio_{STRAT_KEY.lower()}.json"
+TRADE_LOG_FILE = f"{_prefix}_trade_log.csv"  if STRAT_KEY == "A" else f"{_prefix}_trade_log_{STRAT_KEY.lower()}.csv"
 
 live_exchange = None
 if LIVE_TRADE:
