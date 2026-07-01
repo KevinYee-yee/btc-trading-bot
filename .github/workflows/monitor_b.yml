@@ -1,8 +1,7 @@
 name: 策略B RSI超賣 紙上交易
 
 on:
-  schedule:
-    - cron: "*/10 * * * *"
+  # 策略B 2026-07-01 停用（負期望值，23%勝率，結構性失效）
   workflow_dispatch:
     inputs:
       force_test:

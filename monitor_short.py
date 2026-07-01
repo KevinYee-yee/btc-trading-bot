@@ -1,8 +1,9 @@
 """
 BTC 做空策略（OKX 永續合約模擬）
-進場：EMA13死叉EMA48 + 布林中軌以下 + RSI 40-65（有下跌空間）
-出場：止盈-4% / 止損+2% / RSI<25極度超賣 / EMA金叉反轉
-R:R = 2:1（止盈是止損的2倍）
+進場：EMA13持續壓在EMA48以下（趨勢狀態）+ 布林中軌以下 + RSI 30-70（轉弱中）
+出場：止盈-3% / 止損+2% / RSI<25超賣 / EMA金叉反轉
+R:R = 1.5:1
+2026-07-01 修正：由「死叉事件」改為「死叉趨勢狀態」，解決0筆交易問題
 """
 
 import ccxt
@@ -26,9 +27,10 @@ TIMEFRAME       = "15m"
 INITIAL_CAPITAL = 1000.0
 COMMISSION      = 0.001    # OKX 永續合約 taker fee
 
-# 做空出場條件（無固定止盈，由訊號決定）
-SHORT_SL_PCT    = 1.02     # 止損：漲2%（唯一硬性出場）
-RSI_COVER_LEVEL = 25       # RSI超賣覆蓋（極端情況保護）
+# 做空出場條件
+SHORT_TP_PCT    = 0.97     # 止盈：跌3%
+SHORT_SL_PCT    = 1.02     # 止損：漲2%（R:R = 1.5:1）
+RSI_COVER_LEVEL = 25       # RSI超賣覆蓋
 COOLDOWN_BARS   = 4        # 出場後冷卻4根K（60分鐘）
 
 # 技術指標參數
@@ -40,8 +42,8 @@ MACD_SIGNAL_P = 9
 RSI_PERIOD   = 9
 EMA_FAST     = 13
 EMA_SLOW     = 48
-RSI_ENTRY_LOW  = 40   # 進場RSI下限（太低=超賣，不做空）
-RSI_ENTRY_HIGH = 65   # 進場RSI上限（在此範圍才有下跌空間）
+RSI_ENTRY_LOW  = 30   # 進場RSI下限（放寬：允許超賣早期進場）
+RSI_ENTRY_HIGH = 70   # 進場RSI上限（放寬：允許剛開始轉弱時進場）
 
 PORTFOLIO_FILE = "paper_portfolio_short.json"
 TRADE_LOG_FILE = "trade_log_short.csv"
@@ -156,22 +158,23 @@ def fetch_and_calc():
 # 做空訊號邏輯
 # ─────────────────────────────────────────────
 def get_short_entry_signal(df, latest):
-    """EMA13死叉EMA48 + 布林中軌以下 + RSI在40-65（有下跌空間）"""
+    """EMA13持續壓在EMA48以下（趨勢狀態）+ 布林中軌以下 + RSI 30-70"""
     ef_now  = df["ema_f"].iloc[-2]
     es_now  = df["ema_s"].iloc[-2]
-    ef_prev = df["ema_f"].iloc[-3]
-    es_prev = df["ema_s"].iloc[-3]
+    rsi     = latest["rsi"]
+    rsi_prev = df["rsi"].iloc[-3]  # 前一根RSI
 
-    death_cross  = (ef_now < es_now) and (ef_prev >= es_prev)
-    below_mid    = latest["close"] < latest["bb_mid"]
-    rsi          = latest["rsi"]
-    rsi_momentum = RSI_ENTRY_LOW <= rsi <= RSI_ENTRY_HIGH
+    # 趨勢狀態（非事件）：EMA13 < EMA48 且 RSI 由高往低轉
+    bearish_trend = ef_now < es_now
+    rsi_declining = rsi < rsi_prev           # RSI 正在下降
+    below_mid     = latest["close"] < latest["bb_mid"]
+    rsi_range     = RSI_ENTRY_LOW <= rsi <= RSI_ENTRY_HIGH
 
-    ok = death_cross and below_mid and rsi_momentum
+    ok = bearish_trend and below_mid and rsi_range and rsi_declining
     c1 = f"EMA13:{ef_now:.0f}/EMA48:{es_now:.0f}"
-    c2 = (f"死叉{'✅' if death_cross else '❌'} "
+    c2 = (f"空頭趨勢{'✅' if bearish_trend else '❌'} "
           f"中軌下{'✅' if below_mid else '❌'} "
-          f"RSI{rsi:.0f}{'✅' if rsi_momentum else '❌'}")
+          f"RSI{rsi:.0f}↓{'✅' if rsi_declining else '❌'}")
     return ok, c1, c2
 
 
@@ -180,6 +183,9 @@ def get_short_exit_reason(df, latest, portfolio):
     price       = latest["close"]
     entry_price = portfolio["entry_price"]
     rsi         = latest["rsi"]
+
+    if price <= entry_price * SHORT_TP_PCT:
+        return f"下跌達3%止盈（${price:,.2f}）"
 
     if price >= entry_price * SHORT_SL_PCT:
         return f"上漲超過2%止損（${price:,.2f}）"

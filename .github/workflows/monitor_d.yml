@@ -1,8 +1,7 @@
 name: 策略D MACD零軸 紙上交易
 
 on:
-  schedule:
-    - cron: "*/10 * * * *"
+  # 策略D 2026-07-01 停用（負期望值，21%勝率，結構性失效）
   workflow_dispatch:
     inputs:
       force_test:
