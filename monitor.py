@@ -9,6 +9,7 @@ import numpy as np
 import json
 import csv
 import os
+import time
 import urllib.request
 import urllib.parse
 from datetime import datetime, timezone
@@ -133,6 +134,20 @@ def _live_place_order(side, qty):
     except Exception as e:
         notify(f"🚨 [{STRAT_KEY}] 下單失敗（{side} {qty:.6f} {SYMBOL}）：{e}")
         return None
+
+def _live_fill_price(order, fallback):
+    """實盤記帳用實際成交均價；下單回應沒有就查一次訂單，都取不到才退回K線收盤價"""
+    try:
+        avg = order.get("average") or order.get("price")
+        if not avg and order.get("id"):
+            time.sleep(1)
+            fetched = live_exchange.fetch_order(order["id"], SYMBOL)
+            avg = fetched.get("average") or fetched.get("price")
+        if avg:
+            return float(avg)
+    except Exception as e:
+        print(f"  ⚠️ 取成交均價失敗，退回K線收盤價：{e}")
+    return fallback
 
 def _live_sync_position(portfolio):
     """缺口5：啟動時核對交易所持倉與 JSON 是否一致"""
@@ -460,7 +475,8 @@ def _execute_buy(df, latest, portfolio, price, bb_upper, bb_lower, recent_low,
         if order is None:
             print("  ❌ 實盤下單失敗，取消本次進場")
             return
-        print(f"  ✅ 【實盤】買入 {live_qty} {ASSET} @ ${price:,.2f}")
+        price = _live_fill_price(order, price)
+        print(f"  ✅ 【實盤】買入 {live_qty} {ASSET} @ ${price:,.2f}（實際成交均價）")
 
     qty = portfolio["capital"] / price / (1 + COMMISSION)
     portfolio["position"]    = qty
@@ -497,7 +513,8 @@ def _execute_sell(df, latest, portfolio, price, bb_upper, bb_lower, reason, now_
             if order is None:
                 print("  ❌ 實盤賣出失敗，保留持倉狀態待下次重試")
                 return
-            print(f"  ✅ 【實盤】賣出 {live_qty} {ASSET} @ ${price:,.2f}")
+            price = _live_fill_price(order, price)
+            print(f"  ✅ 【實盤】賣出 {live_qty} {ASSET} @ ${price:,.2f}（實際成交均價）")
         else:
             notify(f"⚠️ [{STRAT_KEY}] 交易所無 {ASSET} 持倉，跳過真實賣出，更新模擬狀態")
 
