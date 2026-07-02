@@ -1,0 +1,40 @@
+name: 🐕 實盤看門狗（排程停擺告警）
+
+on:
+  schedule:
+    - cron: "7,37 * * * *"
+  workflow_dispatch:
+
+jobs:
+  watchdog:
+    runs-on: ubuntu-latest
+    # 只在實盤開啟時監控
+    if: ${{ vars.LIVE_SOL_B == 'on' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 檢查心跳是否停擺
+        env:
+          TG_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          ALERT=""
+          if [ ! -f live_heartbeat.txt ]; then
+            ALERT="🚨【看門狗】實盤 SOL_B 已開啟（LIVE_SOL_B=on）但從未產生心跳，排程可能沒在跑！"
+          else
+            LAST=$(cat live_heartbeat.txt)
+            LAST_TS=$(date -u -d "$LAST" +%s)
+            NOW_TS=$(date -u +%s)
+            AGE=$(( (NOW_TS - LAST_TS) / 60 ))
+            echo "最後心跳：$LAST（$AGE 分鐘前）"
+            if [ "$AGE" -gt 45 ]; then
+              ALERT="🚨【看門狗】實盤 SOL_B 心跳已停擺 $AGE 分鐘（正常應 ≤10 分鐘）！排程可能故障，請檢查 GitHub Actions。"
+            fi
+          fi
+          if [ -n "$ALERT" ]; then
+            curl -s -X POST "https://api.telegram.org/bot$TG_TOKEN/sendMessage" \
+              -d chat_id="$TG_CHAT_ID" -d text="$ALERT"
+            exit 1
+          fi
+          echo "✅ 心跳正常"
