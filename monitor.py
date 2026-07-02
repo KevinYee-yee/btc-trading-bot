@@ -397,9 +397,9 @@ def run():
             _execute_sell(df, latest, portfolio, price, bb_upper, bb_lower, reason, now_time)
             return
 
-    # ── 連敗熔斷（B策略）─────────────────────
+    # ── 連敗熔斷（所有策略）───────────────────
     CIRCUIT_BREAKER = 3
-    if STRATEGY == "B" and portfolio.get("consecutive_losses", 0) >= CIRCUIT_BREAKER:
+    if portfolio.get("consecutive_losses", 0) >= CIRCUIT_BREAKER:
         print(f"  🚫 熔斷中（連敗 {portfolio['consecutive_losses']} 次）跳過進場")
         save_portfolio(portfolio)
         sheets_post({
