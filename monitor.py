@@ -135,6 +135,50 @@ def _live_place_order(side, qty):
         notify(f"🚨 [{STRAT_KEY}] 下單失敗（{side} {qty:.6f} {SYMBOL}）：{e}")
         return None
 
+def _live_maker_buy(qty, ref_price):
+    """post-only 限價買入（掛 best bid，省taker費與價差）；20秒未成交撤單放棄本次進場"""
+    try:
+        bid = float(live_exchange.fetch_ticker(SYMBOL).get("bid") or 0)
+        if bid <= 0:
+            bid = ref_price
+        order = live_exchange.create_order(SYMBOL, "limit", "buy", qty, bid, {"postOnly": True})
+        for _ in range(10):
+            time.sleep(2)
+            o = live_exchange.fetch_order(order["id"], SYMBOL)
+            if o.get("status") == "closed":
+                return o
+        try:
+            live_exchange.cancel_order(order["id"], SYMBOL)
+        except Exception:
+            pass
+        o = live_exchange.fetch_order(order["id"], SYMBOL)
+        if float(o.get("filled") or 0) > 0.0001:
+            return o  # 部分成交也接受
+        print("  ℹ️ maker 掛單未成交，本次進場放棄（訊號若持續下根K線再試）")
+        return None
+    except Exception as e:
+        notify(f"🚨 [{STRAT_KEY}] maker買入失敗：{e}")
+        return None
+
+def _live_place_stop(qty, stop_price):
+    """買入後在交易所掛止損市價單（毫秒級觸發，消滅停損穿透）；失敗則退回機器人10分鐘輪詢停損"""
+    try:
+        o = live_exchange.create_order(SYMBOL, "market", "sell", qty, None, {"stopLossPrice": stop_price})
+        print(f"  🛡️ 交易所止損已掛：跌至 ${stop_price:,.2f} 自動賣出")
+        return o.get("id") or ""
+    except Exception as e:
+        notify(f"⚠️ [{STRAT_KEY}] 交易所止損掛單失敗（退回機器人停損）：{e}")
+        return ""
+
+def _live_cancel_stop(algo_id):
+    """出場前撤掉交易所止損單（避免重複賣出）"""
+    for params in ({"stop": True}, {"trigger": True}, {}):
+        try:
+            live_exchange.cancel_order(algo_id, SYMBOL, params)
+            return
+        except Exception:
+            continue
+
 def _live_fill_price(order, fallback):
     """實盤記帳用實際成交均價；下單回應沒有就查一次訂單，都取不到才退回K線收盤價"""
     try:
@@ -159,11 +203,36 @@ def _live_sync_position(portfolio):
     if exchange_qty > threshold and json_qty <= threshold:
         notify(f"⚠️ [{STRAT_KEY}] 不一致：交易所有 {exchange_qty:.6f} {ASSET}，JSON 空倉，請手動核對")
     elif exchange_qty <= threshold and json_qty > threshold:
-        notify(f"⚠️ [{STRAT_KEY}] 不一致：JSON 有持倉但交易所無 {ASSET}，自動重置 JSON 為空倉")
-        portfolio["position"]    = 0.0
-        portfolio["entry_price"] = 0.0
-        portfolio["entry_time"]  = ""
-        save_portfolio(portfolio)
+        if portfolio.get("live_algo_id"):
+            # 交易所止損單在輪詢間隔內觸發：以止損價完整記帳出場
+            entry   = portfolio["entry_price"]
+            stop_px = round(entry * 0.985, 4)
+            sell_value = json_qty * stop_px * (1 - COMMISSION)
+            cost       = json_qty * entry * (1 + COMMISSION)
+            pnl        = sell_value - cost
+            pnl_pct    = pnl / cost * 100
+            portfolio["capital"]           += sell_value
+            portfolio["position"]           = 0.0
+            portfolio["entry_price"]        = 0.0
+            portfolio["entry_time"]         = ""
+            portfolio["last_exit_candle"]   = portfolio.get("last_candle", "")
+            portfolio["total_trades"]      += 1
+            portfolio["losses"]            += 1
+            portfolio["total_pnl"]         += pnl
+            portfolio["consecutive_losses"] = portfolio.get("consecutive_losses", 0) + 1
+            portfolio["live_algo_id"]       = ""
+            log_trade("SELL", stop_px, json_qty, pnl_pct, "交易所止損觸發", portfolio)
+            save_portfolio(portfolio)
+            notify(f"🔴 【實盤】出場｜{STRATEGY_LABEL.get(STRAT_KEY)}\n"
+                   f"進場：${entry:,.2f} → 止損：${stop_px:,.2f}\n"
+                   f"損益：{pnl_pct:+.2f}%\n"
+                   f"原因：交易所止損單觸發（毫秒級保護）")
+        else:
+            notify(f"⚠️ [{STRAT_KEY}] 不一致：JSON 有持倉但交易所無 {ASSET}，自動重置 JSON 為空倉")
+            portfolio["position"]    = 0.0
+            portfolio["entry_price"] = 0.0
+            portfolio["entry_time"]  = ""
+            save_portfolio(portfolio)
     return portfolio
 
 # ─────────────────────────────────────────────
@@ -471,12 +540,17 @@ def _execute_buy(df, latest, portfolio, price, bb_upper, bb_lower, recent_low,
             print("  ❌ 餘額不足，取消本次進場")
             return
         live_qty = round(LIVE_CAPITAL / price, 6)
-        order = _live_place_order("buy", live_qty)
+        order = _live_maker_buy(live_qty, price)
         if order is None:
-            print("  ❌ 實盤下單失敗，取消本次進場")
+            print("  ❌ 實盤進場未成交，取消本次進場")
             return
         price = _live_fill_price(order, price)
         print(f"  ✅ 【實盤】買入 {live_qty} {ASSET} @ ${price:,.2f}（實際成交均價）")
+        # 交易所級止損：用實際可賣數量（買入手續費以SOL扣）
+        time.sleep(1)
+        avail = _live_get_position_qty() or 0
+        if avail > 0.0001:
+            portfolio["live_algo_id"] = _live_place_stop(avail, round(price * 0.985, 2))
 
     qty = portfolio["capital"] / price / (1 + COMMISSION)
     portfolio["position"]    = qty
@@ -504,6 +578,10 @@ def _execute_buy(df, latest, portfolio, price, bb_upper, bb_lower, recent_low,
 def _execute_sell(df, latest, portfolio, price, bb_upper, bb_lower, reason, now_time):
     # 缺口1/3/6：實盤賣出（先賣成功才更新 portfolio；失敗保留持倉等下次重試）
     if LIVE_TRADE:
+        # 先撤交易所止損單，避免與本次賣出重複成交
+        if portfolio.get("live_algo_id"):
+            _live_cancel_stop(portfolio["live_algo_id"])
+            portfolio["live_algo_id"] = ""
         live_qty = _live_get_position_qty()
         if live_qty is None:
             print("  ❌ 無法取得持倉，保留狀態待下次重試")
