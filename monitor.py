@@ -136,25 +136,28 @@ def _live_place_order(side, qty):
         return None
 
 def _live_maker_buy(qty, ref_price):
-    """post-only 限價買入（掛 best bid，省taker費與價差）；20秒未成交撤單放棄本次進場"""
+    """post-only 限價買入（掛 best bid，省taker費與價差）
+    未成交則追最新買一價重掛，最多3輪（約45秒），仍未成交才放棄本次進場"""
     try:
-        bid = float(live_exchange.fetch_ticker(SYMBOL).get("bid") or 0)
-        if bid <= 0:
-            bid = ref_price
-        order = live_exchange.create_order(SYMBOL, "limit", "buy", qty, bid, {"postOnly": True})
-        for _ in range(10):
-            time.sleep(2)
+        for attempt in range(3):
+            bid = float(live_exchange.fetch_ticker(SYMBOL).get("bid") or 0)
+            if bid <= 0:
+                bid = ref_price
+            order = live_exchange.create_order(SYMBOL, "limit", "buy", qty, bid, {"postOnly": True})
+            for _ in range(7):
+                time.sleep(2)
+                o = live_exchange.fetch_order(order["id"], SYMBOL)
+                if o.get("status") == "closed":
+                    return o
+            try:
+                live_exchange.cancel_order(order["id"], SYMBOL)
+            except Exception:
+                pass
             o = live_exchange.fetch_order(order["id"], SYMBOL)
-            if o.get("status") == "closed":
-                return o
-        try:
-            live_exchange.cancel_order(order["id"], SYMBOL)
-        except Exception:
-            pass
-        o = live_exchange.fetch_order(order["id"], SYMBOL)
-        if float(o.get("filled") or 0) > 0.0001:
-            return o  # 部分成交也接受
-        print("  ℹ️ maker 掛單未成交，本次進場放棄（訊號若持續下根K線再試）")
+            if float(o.get("filled") or 0) > 0.0001:
+                return o  # 部分成交也接受
+            print(f"  🔁 maker 第{attempt+1}輪未成交（掛 ${bid:,.2f}），追價重掛")
+        print("  ℹ️ maker 3輪未成交，本次進場放棄（訊號若持續下根K線再試）")
         return None
     except Exception as e:
         notify(f"🚨 [{STRAT_KEY}] maker買入失敗：{e}")
