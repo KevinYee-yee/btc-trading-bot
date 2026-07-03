@@ -218,8 +218,8 @@ def _execute_short(df, latest, portfolio, price, now_time, reason, c1, c2):
     sheets_post({"type":"trade","time":now_time,"action":"SHORT","price":str(price),
                  "qty":str(qty),"pnl_pct":"","capital_after":"0","reason":reason,
                  "portfolio":portfolio})
-    notify(f"🔻 <b>做空進場｜BTC短策略</b>\n"
-           f"進場價：<b>${price:,.2f}</b>\n"
+    notify(f"🔻 做空進場｜BTC短策略\n"
+           f"進場價：${price:,.2f}\n"
            f"空單數量：{qty:.6f} BTC\n"
            f"止損：${price*SHORT_SL_PCT:,.0f}（+2%）｜出場由EMA金叉/RSI訊號決定\n"
            f"原因：{reason}")
@@ -259,9 +259,9 @@ def _execute_cover(df, latest, portfolio, price, now_time, reason):
                  "qty":str(qty),"pnl_pct":f"{pnl_pct:+.2f}%",
                  "capital_after":str(portfolio["capital"]),"reason":reason,"portfolio":portfolio})
     icon = "🟢" if pnl > 0 else "🔴"
-    notify(f"{icon} <b>覆蓋空頭｜BTC短策略</b>\n"
+    notify(f"{icon} 覆蓋空頭｜BTC短策略\n"
            f"進場：${entry_price:,.2f} → 覆蓋：${price:,.2f}\n"
-           f"損益：<b>{pnl_pct:+.2f}%（{pnl:+.2f} USDT）</b>\n"
+           f"損益：{pnl_pct:+.2f}%（{pnl:+.2f} USDT）\n"
            f"原因：{reason}")
     print(f"  {icon} 覆蓋 @ ${price:,.2f}  損益：{pnl_pct:+.2f}%  原因：{reason}")
 
