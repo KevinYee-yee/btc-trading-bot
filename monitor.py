@@ -170,6 +170,7 @@ def _live_place_stop(qty, stop_price):
         print(f"  🛡️ 交易所止損已掛：跌至 ${stop_price:,.2f} 自動賣出")
         return o.get("id") or ""
     except Exception as e:
+        print(f"  ⚠️ 交易所止損掛單失敗（退回機器人停損）：{e}")
         notify(f"⚠️ [{STRAT_KEY}] 交易所止損掛單失敗（退回機器人停損）：{e}")
         return ""
 
