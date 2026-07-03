@@ -33,6 +33,7 @@ jobs:
       - run: pip install ccxt pandas numpy
 
       - name: Run SOL Strategy B (LIVE)
+        id: trade
         env:
           STRATEGY:         B
           SYMBOL:           SOL/USDT
@@ -56,12 +57,18 @@ jobs:
           git add live_portfolio_sol_b.json 2>/dev/null || true
           git add live_trade_log_sol_b.csv 2>/dev/null || true
           git diff --cached --quiet || git commit -m "🔴LIVE SOL-B $(date -u '+%Y-%m-%d %H:%M UTC')"
-          git pull --rebase origin main
-          git push || (git pull --rebase origin main && git push)
+          # 多 workflow 同時推送易撞車：重試 5 次 + 隨機退避
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main || true
+            if git push; then exit 0; fi
+            sleep $((RANDOM % 8 + 2))
+          done
+          echo "::warning::推送重試 5 次後仍失敗，本輪狀態未上傳（下輪自動補）"
+          exit 1
 
-      - name: 失敗即時告警
-        if: failure()
+      - name: 失敗即時告警（僅交易失敗）
+        if: failure() && steps.trade.outcome == 'failure'
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -d text="🚨【實盤】SOL_B workflow 執行失敗！請查看 GitHub Actions：https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            -d text="🚨【實盤】SOL_B 交易程式執行失敗！請查看 GitHub Actions：https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"

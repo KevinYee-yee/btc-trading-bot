@@ -46,5 +46,10 @@ jobs:
           git add paper_portfolio_eth_b.json
           git add trade_log_eth_b.csv 2>/dev/null || true
           git diff --cached --quiet || git commit -m "📊ETH-B $(date -u '+%Y-%m-%d %H:%M UTC') 更新"
-          git pull --rebase origin main
-          git push || (git pull --rebase origin main && git push)
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main || true
+            if git push; then exit 0; fi
+            sleep $((RANDOM % 8 + 2))
+          done
+          echo "::warning::推送重試5次失敗，本輪狀態未上傳（下輪自動補）"
+          exit 1

@@ -50,12 +50,12 @@ else:
 
 STRATEGY_LABEL = {
     "A":     "BTC 策略A：布林+MACD+RSI",
-    "B":     "BTC 策略B：RSI(9)&lt;40",
+    "B":     "BTC 策略B：RSI(9)<40",
     "C":     "BTC 策略C：EMA13/48",
     "D":     "BTC 策略D：MACD信號線",
-    "ETH_B": "ETH 策略B：RSI(9)&lt;40",
+    "ETH_B": "ETH 策略B：RSI(9)<40",
     "ETH_C": "ETH 策略C：EMA13/48",
-    "SOL_B": "SOL 策略B：RSI(9)&lt;40",
+    "SOL_B": "SOL 策略B：RSI(9)<40",
     "SOL_C": "SOL 策略C：EMA13/48",
 }
 
@@ -296,7 +296,7 @@ def get_entry_signal(df, latest):
         recent_support = df["low"].iloc[-50:-3].min()
         above_support  = latest["close"] > recent_support
         ok = rsi < RSI_BUY and trend_up and above_support
-        c2 = (f"{'✅' if rsi < RSI_BUY else '❌'}&lt;{RSI_BUY} "
+        c2 = (f"{'✅' if rsi < RSI_BUY else '❌'}<{RSI_BUY} "
               f"EMA48{'✅' if trend_up else '❌'} "
               f"支撐{'✅' if above_support else '❌跌破'}")
         return ok, f"RSI(9) {rsi:.1f}", c2

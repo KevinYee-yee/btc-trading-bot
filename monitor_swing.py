@@ -229,8 +229,8 @@ def execute_buy(latest, portfolio, price, sma20, reason, now_time):
     sheets_post({"type":"trade","time":now_time,"action":"BUY","price":str(price),
                  "qty":str(qty),"pnl_pct":"","capital_after":"0","reason":reason,
                  "portfolio":portfolio,"bb_upper":str(sma20),"bb_lower":str(sma20)})
-    notify(f"🔔 <b>進場｜{LABEL}</b>\n"
-           f"進場價：<b>${price:,.0f}</b>\n"
+    notify(f"🔔 進場｜{LABEL}\n"
+           f"進場價：${price:,.0f}\n"
            f"數量：{qty:.6f} BTC\n"
            f"20日SMA：${sma20:,.0f}\n"
            f"原因：{reason}")
@@ -278,9 +278,9 @@ def execute_sell(portfolio, price, sell_qty, reason, now_time, exit_type):
                  "portfolio":portfolio,"bb_upper":"0","bb_lower":"0"})
     icon = "🟢" if pnl > 0 else "🔴"
     stage_tag = {"PARTIAL_1":"[1/3]","PARTIAL_2":"[1/2]","FULL":"[全出]"}.get(exit_type,"")
-    notify(f"{icon} <b>出場{stage_tag}｜{LABEL}</b>\n"
+    notify(f"{icon} 出場{stage_tag}｜{LABEL}\n"
            f"進場：${entry_price:,.0f} → 出場：${price:,.0f}\n"
-           f"損益：<b>{pnl_pct:+.2f}%（{pnl:+.2f} USDT）</b>\n"
+           f"損益：{pnl_pct:+.2f}%（{pnl:+.2f} USDT）\n"
            f"剩餘：{portfolio['position']:.6f} BTC\n"
            f"原因：{reason}")
     print(f"  {icon} 賣出{stage_tag} {sell_qty:.6f} BTC @ ${price:,.0f}  損益：{pnl_pct:+.2f}%")
