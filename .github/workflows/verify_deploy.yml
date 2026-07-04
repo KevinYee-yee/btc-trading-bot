@@ -24,9 +24,9 @@ jobs:
             exit 1
           fi
 
-          if grep -q "BTC 策略 A/B/C/D 監測" /tmp/page.html && \
+          if grep -q "AI 交易戰情室" /tmp/page.html && \
              grep -q "equity-chart" /tmp/page.html && \
-             grep -q "showTradeModal" /tmp/page.html; then
+             grep -q "race" /tmp/page.html; then
             echo "CHECK_RESULT=OK" >> $GITHUB_OUTPUT
             echo "✅ 內容驗證通過"
           else
