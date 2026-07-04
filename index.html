@@ -1,670 +1,180 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>BTC 策略監測</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 交易戰情室</title>
 <style>
-  :root {
-    --bg: #0d0d0d; --card: #1a1a1a; --border: #2a2a2a;
-    --text: #e8e8e8; --sub: #888; --gold: #f5a623;
-    --green: #34c759; --red: #ff3b30;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-  body { background: var(--bg); color: var(--text); font-family: -apple-system, "SF Pro Display", sans-serif; max-width: 480px; margin: 0 auto; padding: 0 0 40px; }
-
-  /* Header */
-  .header { padding: 16px 16px 12px; position: sticky; top: 0; background: var(--bg); z-index: 20; border-bottom: 1px solid var(--border); }
-  .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-  .header-title { font-size: 12px; color: var(--sub); text-transform: uppercase; letter-spacing: 0.5px; }
-  .btc-price { font-size: 30px; font-weight: 700; color: var(--gold); }
-  .last-update { font-size: 11px; color: var(--sub); margin-top: 2px; }
-  .refresh-btn { background: var(--card); border: 1px solid var(--border); color: var(--text); padding: 8px 14px; border-radius: 20px; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 5px; }
-  .refresh-btn:active { background: #252525; }
-  .spin { display: inline-block; }
-  .refresh-btn.loading .spin { animation: spin 0.8s linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-
-  /* Tab bar */
-  .tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
-  .tabs::-webkit-scrollbar { display: none; }
-  .tab { padding: 6px 14px; border-radius: 16px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; border: 1px solid var(--border); color: var(--sub); background: transparent; flex-shrink: 0; }
-  .tab.active { background: var(--gold); color: #000; border-color: var(--gold); }
-
-  /* Comparison grid (overview tab) */
-  .overview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 16px; }
-  .ov-card { background: var(--card); border-radius: 14px; padding: 14px; cursor: pointer; }
-  .ov-card:active { background: #222; }
-  .ov-label { font-size: 11px; color: var(--sub); margin-bottom: 4px; }
-  .ov-name  { font-size: 13px; font-weight: 700; margin-bottom: 8px; }
-  .ov-return { font-size: 22px; font-weight: 700; }
-  .ov-trades { font-size: 11px; color: var(--sub); margin-top: 4px; }
-  .ov-status { font-size: 11px; margin-top: 6px; padding: 3px 8px; border-radius: 6px; display: inline-block; }
-  .ov-status.holding { background: #0a2218; color: var(--green); }
-  .ov-status.empty   { background: #1e1e1e; color: var(--sub); }
-
-  /* Strategy detail view */
-  .section { padding: 16px 16px 0; }
-  .section-label { font-size: 11px; color: var(--sub); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 10px; }
-
-  .status-banner { margin: 12px 16px 0; padding: 12px 16px; border-radius: 14px; display: flex; align-items: center; gap: 10px; }
-  .status-banner.empty   { background: #1c1c1c; }
-  .status-banner.holding { background: #0a2218; border: 1px solid #1a4a2e; }
-  .status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-  .dot-empty   { background: #555; }
-  .dot-holding { background: var(--green); box-shadow: 0 0 8px var(--green); }
-  .status-text { font-size: 14px; font-weight: 600; }
-  .status-sub  { font-size: 11px; color: var(--sub); margin-top: 2px; }
-
-  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .card { background: var(--card); border-radius: 14px; padding: 14px 16px; }
-  .card-label { font-size: 11px; color: var(--sub); margin-bottom: 6px; }
-  .card-value { font-size: 21px; font-weight: 700; line-height: 1.1; }
-  .card-sub   { font-size: 11px; color: var(--sub); margin-top: 4px; }
-  .green { color: var(--green); } .red { color: var(--red); } .gold { color: var(--gold); } .white { color: #fff; }
-
-  .log-list { display: flex; flex-direction: column; gap: 8px; }
-  .log-item { background: var(--card); border-radius: 14px; padding: 14px; display: flex; gap: 12px; }
-  .log-icon { font-size: 15px; flex-shrink: 0; margin-top: 1px; }
-  .log-body { flex: 1; }
-  .log-time  { font-size: 11px; color: var(--sub); margin-bottom: 4px; }
-  .log-row   { display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; }
-  .log-price { font-size: 16px; font-weight: 700; }
-  .log-badge { font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 7px; }
-  .badge-wait   { background: #222; color: #666; }
-  .badge-signal { background: #3d2e00; color: var(--gold); }
-  .log-meta { font-size: 11px; color: var(--sub); }
-
-  .trade-list { display: flex; flex-direction: column; gap: 8px; }
-  .trade-item { background: var(--card); border-radius: 14px; padding: 14px; }
-  .trade-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 7px; }
-  .trade-badge { font-size: 12px; font-weight: 700; padding: 3px 11px; border-radius: 7px; }
-  .badge-buy       { background: #0a2218; color: var(--green); }
-  .badge-sell-win  { background: #0a2218; color: var(--green); }
-  .badge-sell-loss { background: #220a0a; color: var(--red); }
-  .trade-time { font-size: 11px; color: var(--sub); }
-  .trade-row { display: flex; justify-content: space-between; }
-  .trade-price { font-size: 15px; font-weight: 600; }
-  .trade-pnl   { font-size: 16px; font-weight: 700; }
-  .trade-reason { font-size: 11px; color: var(--sub); margin-top: 5px; }
-
-  .empty-state { text-align: center; padding: 28px; color: var(--sub); font-size: 13px; }
-  .hidden { display: none !important; }
-
-  /* 交易明細 Modal */
-  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 100; display: flex; align-items: flex-end; }
-  .modal-overlay.hidden { display: none !important; }
-  .modal-sheet { background: var(--card); border-radius: 22px 22px 0 0; width: 100%; max-height: 82vh; overflow-y: auto; padding: 0 0 44px; animation: slideUp 0.22s ease; }
-  @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
-  .modal-handle { width: 38px; height: 4px; background: #3a3a3a; border-radius: 2px; margin: 14px auto 0; }
-  .modal-head { padding: 16px 20px 10px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); }
-  .modal-title { font-size: 15px; font-weight: 700; }
-  .modal-close { font-size: 20px; color: var(--sub); cursor: pointer; line-height: 1; padding: 4px 4px 4px 12px; }
-  .modal-summary { display: flex; gap: 0; border-bottom: 1px solid var(--border); }
-  .modal-stat { flex: 1; text-align: center; padding: 12px 4px; }
-  .modal-stat-v { font-size: 17px; font-weight: 700; }
-  .modal-stat-l { font-size: 10px; color: var(--sub); margin-top: 2px; }
-  .pair-list { padding: 12px 16px 0; display: flex; flex-direction: column; gap: 10px; }
-  .pair-card { background: #111; border-radius: 14px; overflow: hidden; }
-  .pair-card.open { border: 1px solid #1a4a2e; }
-  .pair-row { display: flex; align-items: center; padding: 11px 14px; gap: 10px; }
-  .pair-row + .pair-row { border-top: 1px solid #1e1e1e; }
-  .pair-badge { font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 6px; flex-shrink: 0; min-width: 42px; text-align: center; }
-  .pb-buy  { background: #0a2218; color: var(--green); }
-  .pb-sell-win  { background: #0a2218; color: var(--green); }
-  .pb-sell-loss { background: #220a0a; color: var(--red); }
-  .pb-open { background: #2a1e00; color: var(--gold); }
-  .pair-info { flex: 1; }
-  .pair-price { font-size: 15px; font-weight: 700; }
-  .pair-qty   { font-size: 11px; color: var(--sub); margin-top: 1px; }
-  .pair-right { text-align: right; flex-shrink: 0; }
-  .pair-pnl   { font-size: 16px; font-weight: 700; }
-  .pair-time  { font-size: 10px; color: var(--sub); margin-top: 2px; }
-  .pair-reason { padding: 6px 14px 10px; font-size: 11px; color: var(--sub); }
-
-  /* ov-card 交易筆數可點擊 */
-  .ov-trades-btn { font-size: 11px; color: var(--gold); margin-top: 4px; cursor: pointer; display: inline-block; text-decoration: underline dotted; }
-
-  @media (min-width: 520px) { body { max-width: 600px; } .cards { grid-template-columns: repeat(3, 1fr); } }
+:root{
+  --surface:#16161d; --card:#1e1e27; --card2:#24242f; --line:#32323e;
+  --ink:#f2f2f5; --ink2:#a8a8b5; --ink3:#6c6c78;
+  --s1:#3987e5; --s2:#199e70; --s3:#c98500;
+  --good:#1fbf83; --bad:#e66767; --warn:#c98500;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--surface);color:var(--ink);font-family:-apple-system,"PingFang TC","Noto Sans TC",sans-serif;padding:16px;max-width:1080px;margin:0 auto}
+h1{font-size:1.25rem;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+h2{font-size:.95rem;color:var(--ink2);margin:26px 0 10px;font-weight:600}
+.pill{font-size:.72rem;padding:3px 10px;border-radius:99px;border:1px solid var(--line);color:var(--ink2)}
+.pill.ok{color:var(--good);border-color:var(--good)}
+.pill.bad{color:var(--bad);border-color:var(--bad)}
+.sub{color:var(--ink3);font-size:.78rem;margin-top:6px}
+.grid{display:grid;gap:12px}
+.tiles{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+.tile .k{font-size:.75rem;color:var(--ink2)}
+.tile .v{font-size:1.45rem;font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums}
+.tile .d{font-size:.72rem;color:var(--ink3);margin-top:4px}
+.pos{color:var(--good)} .neg{color:var(--bad)}
+.race{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+.card .name{display:flex;align-items:center;gap:8px;font-weight:600;font-size:.9rem}
+.dot{width:10px;height:10px;border-radius:50%;flex:none}
+.card .ret{font-size:1.6rem;font-weight:700;margin:6px 0 2px;font-variant-numeric:tabular-nums}
+.card .meta{font-size:.75rem;color:var(--ink2)}
+.lead{outline:2px solid var(--s2);outline-offset:1px}
+#chartwrap{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.8rem;font-variant-numeric:tabular-nums}
+th{color:var(--ink3);font-weight:500;text-align:left;padding:7px 8px;border-bottom:1px solid var(--line)}
+td{padding:7px 8px;border-bottom:1px solid var(--card2);color:var(--ink2)}
+td:first-child{color:var(--ink3)}
+.tag{font-size:.7rem;padding:1px 7px;border-radius:99px;background:var(--card2)}
+footer{color:var(--ink3);font-size:.72rem;margin:26px 0 8px;text-align:center}
 </style>
 </head>
 <body>
+<h1>⚡ AI 交易戰情室
+  <span class="pill" id="hb">排程檢查中…</span>
+  <span class="pill" id="upd">載入中…</span>
+</h1>
+<div class="sub">資料直讀 GitHub（每次交易後自動更新）・每 5 分鐘自動重新整理</div>
 
-<div class="header">
-  <div class="header-row">
-    <div>
-      <div class="header-title">BTC 策略 A/B/C/D 監測</div>
-      <div class="btc-price" id="btc-price">—</div>
-      <div class="last-update" id="last-update">點擊更新</div>
-    </div>
-    <button class="refresh-btn" id="refresh-btn" onclick="doRefresh()">
-      <span class="spin">↻</span>更新
-    </button>
-  </div>
-  <div class="tabs">
-    <div class="tab active" onclick="switchAsset('overview')">總覽</div>
-    <div class="tab" onclick="switchAsset('BTC')">BTC</div>
-    <div class="tab" onclick="switchAsset('ETH')">ETH</div>
-    <div class="tab" onclick="switchAsset('SOL')">SOL</div>
-  </div>
+<h2>💰 實盤 SOL_B（本金 $45 USDT）</h2>
+<div class="grid tiles" id="live-tiles"></div>
+
+<h2>🏁 出場規則 A/B 賽場（紙上・虛擬 $1000・同訊號源）</h2>
+<div class="grid race" id="race"></div>
+<div class="sub" style="margin:8px 0 10px">判定規則：滿 40 筆或報酬差 ±3% 先到者為準；勝者先以 50% 資金切換實盤驗證</div>
+<div id="chartwrap">
+  <div style="font-size:.8rem;color:var(--ink2);margin-bottom:8px">資金曲線（虛擬 $1000 起）<span id="chart-note" style="color:var(--ink3)"></span></div>
+  <svg id="equity-chart" width="1000" height="260" role="img" aria-label="三版本資金曲線"></svg>
 </div>
 
-<!-- 交易明細 Modal -->
-<div class="modal-overlay hidden" id="trade-modal-overlay" onclick="closeTradeModal(event)">
-  <div class="modal-sheet" id="trade-modal-sheet">
-    <div class="modal-handle"></div>
-    <div class="modal-head">
-      <div class="modal-title" id="modal-title">交易明細</div>
-      <div class="modal-close" onclick="closeTradeModal()">✕</div>
-    </div>
-    <div class="modal-summary" id="modal-summary"></div>
-    <div class="pair-list" id="modal-pair-list"></div>
-  </div>
-</div>
+<h2>👀 其他觀察倉</h2>
+<div class="grid race" id="others"></div>
 
-<!-- 總覽 -->
-<div id="view-overview">
-  <div class="section" style="padding:16px 16px 0">
-    <div class="section-label">本金變化（六策略比較）</div>
-    <div style="background:var(--card); border-radius:14px; padding:12px 8px;">
-      <canvas id="equity-chart" height="200"></canvas>
-    </div>
-  </div>
-  <div class="overview-grid" id="overview-grid">
-    <div class="empty-state" style="grid-column:1/-1">載入中...</div>
-  </div>
-</div>
+<h2>📜 最近實盤交易</h2>
+<div class="card" style="overflow-x:auto"><table id="trades"><thead>
+<tr><th>時間(台灣)</th><th>動作</th><th>價格</th><th>損益%</th><th>真實損益</th><th>原因</th></tr>
+</thead><tbody></tbody></table></div>
 
-<!-- 策略詳細頁 -->
-<div id="view-detail" class="hidden">
-  <!-- 子選單 -->
-  <div style="padding: 12px 16px 0">
-    <div class="tabs" id="sub-tabs"></div>
-  </div>
-  <div id="status-banner" class="status-banner empty">
-    <span class="status-dot dot-empty"></span>
-    <div><div class="status-text" style="color:#666">載入中...</div></div>
-  </div>
-
-  <div class="section" style="margin-top:16px">
-    <div class="section-label" id="strategy-name-label">帳戶概覽</div>
-    <div class="cards">
-      <div class="card"><div class="card-label">總資產</div><div class="card-value white" id="c-total">—</div><div class="card-sub" id="c-total-sub">初始 $1,000</div></div>
-      <div class="card"><div class="card-label">現金餘額</div><div class="card-value white" id="c-cash">—</div><div class="card-sub" id="c-cash-sub">可用 USDT</div></div>
-      <div class="card"><div class="card-label">累計報酬</div><div class="card-value white" id="c-return">—</div></div>
-      <div class="card"><div class="card-label">已實現損益</div><div class="card-value white" id="c-pnl">—</div></div>
-      <div class="card"><div class="card-label">交易次數</div><div class="card-value white" id="c-trades">—</div></div>
-      <div class="card"><div class="card-label">勝率</div><div class="card-value white" id="c-wr">—</div></div>
-    </div>
-  </div>
-
-  <div class="section" id="trade-section" style="margin-top:20px">
-    <div class="section-label">交易紀錄</div>
-    <div class="pair-list" id="trade-list" style="padding:0"></div>
-  </div>
-
-  <div class="section" style="margin-top:20px">
-    <div class="section-label">最近監測</div>
-    <div class="log-list" id="log-list"><div class="empty-state">載入中...</div></div>
-  </div>
-</div>
+<footer>btc-trading-bot・原版=RSI62出場｜V2=62且獲利≥1%｜V3=RSI70出場</footer>
 
 <script>
-const GS_URL = "https://script.google.com/macros/s/AKfycbya4n2VkmvWcc6Rswq2wWqA26w5Pa94xb3w-3DSjVyMYAE8_t-dRLFvJBOWS_hAmUg/exec";
-const STRATEGY_LABELS = {
-  A:"BTC 布林+MACD+RSI", B:"BTC RSI(9)<40", C:"BTC EMA13/48", D:"BTC MACD信號線",
-  ETH_B:"ETH RSI(9)<40", ETH_C:"ETH EMA13/48",
-  SOL_B:"SOL RSI(9)<40", SOL_C:"SOL EMA13/48",
-  BTC_E:"BTC 20日線波段", BTC_SHORT:"BTC 做空 EMA死叉"
-};
+const RAW = "https://raw.githubusercontent.com/KevinYee-yee/btc-trading-bot/main/";
+const CAP = 45, VBASE = 1000;
+const S = {SOL_B:{c:"var(--s1)",n:"原版 RSI62"},SOL_B_V2:{c:"var(--s2)",n:"V2 62+獲利≥1%"},SOL_B_V3:{c:"var(--s3)",n:"V3 RSI70"}};
+const j = async f => { try{ const r = await fetch(RAW+f+"?t="+Date.now()); return r.ok ? r.json() : null }catch(e){ return null } };
+const t = async f => { try{ const r = await fetch(RAW+f+"?t="+Date.now()); return r.ok ? r.text() : "" }catch(e){ return "" } };
+const pct = p => p.total_pnl/(VBASE/100);
+const cls = v => v>0?"pos":v<0?"neg":"";
+const tw = s => { const d=new Date(s.replace(" ","T")+":00Z"); return isNaN(d)?s:d.toLocaleString("zh-TW",{timeZone:"Asia/Taipei",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}) };
 
-let allData = null;
-let activeAsset = "overview";
-let activeStrat = "A";
+function tile(k,v,d,c){ return `<div class="tile"><div class="k">${k}</div><div class="v ${c||""}">${v}</div><div class="d">${d||""}</div></div>` }
 
-const ASSET_STRATS = { BTC: ["A","B","C","D","BTC_E","BTC_SHORT"], ETH: ["ETH_B","ETH_C"], SOL: ["SOL_B","SOL_C"] };
-const SUB_LABELS   = { A:"策略A", B:"策略B", C:"策略C", D:"策略D", ETH_B:"策略B", ETH_C:"策略C", SOL_B:"策略B", SOL_C:"策略C", BTC_E:"策略E波段", BTC_SHORT:"做空策略" };
-
-function toTW(utcStr) {
-  if (!utcStr) return "—";
-  try {
-    const d = new Date(String(utcStr).replace(" ","T") + (String(utcStr).includes("Z") ? "" : "Z"));
-    return d.toLocaleString("zh-TW", { timeZone:"Asia/Taipei", month:"numeric", day:"numeric", hour:"2-digit", minute:"2-digit", hour12:false });
-  } catch(e) { return utcStr; }
-}
-function toTWDual(utcStr) {
-  if (!utcStr) return "—";
-  try {
-    const d = new Date(String(utcStr).replace(" ","T") + (String(utcStr).includes("Z") ? "" : "Z"));
-    const tw = d.toLocaleString("zh-TW", { timeZone:"Asia/Taipei", month:"numeric", day:"numeric", hour:"2-digit", minute:"2-digit", hour12:false });
-    const utcH = String(d.getUTCHours()).padStart(2,"0");
-    const utcM = String(d.getUTCMinutes()).padStart(2,"0");
-    return `<span>${tw} 台北</span><span style="color:#888;font-size:0.78em;margin-left:6px">UTC ${utcH}:${utcM}</span>`;
-  } catch(e) { return utcStr; }
+function parseCsv(txt){
+  const L = txt.trim().split("\n"); if(L.length<2) return [];
+  const H = L[0].split(",");
+  return L.slice(1).map(r=>{ const c=r.split(","); const o={}; H.forEach((h,i)=>o[h]=c[i]); return o });
 }
 
-function switchAsset(asset) {
-  activeAsset = asset;
-  document.querySelectorAll(".tab").forEach((el, i) => {
-    el.classList.toggle("active", ["overview","BTC","ETH","SOL"][i] === asset);
-  });
-  document.getElementById("view-overview").classList.toggle("hidden", asset !== "overview");
-  document.getElementById("view-detail").classList.toggle("hidden", asset === "overview");
-  if (asset !== "overview") {
-    const strats = ASSET_STRATS[asset];
-    activeStrat = strats[0];
-    buildSubTabs(asset);
-    if (allData) renderDetail(activeStrat);
+async function refresh(){
+  const [live, hb, liveCsv, pb, p2, p3, pa, pe] = await Promise.all([
+    j("live_portfolio_sol_b.json"), t("live_heartbeat.txt"), t("live_trade_log_sol_b.csv"),
+    j("paper_portfolio_sol_b.json"), j("paper_portfolio_sol_b_v2.json"), j("paper_portfolio_sol_b_v3.json"),
+    j("paper_portfolio.json"), j("paper_portfolio_eth_b.json")
+  ]);
+
+  // 心跳健康燈
+  const hbEl = document.getElementById("hb");
+  if(hb){ const age=(Date.now()-new Date(hb.trim()))/60000;
+    hbEl.textContent = age<20?`🟢 排程正常（${age.toFixed(0)}分前）`:`🔴 心跳停擺 ${age.toFixed(0)} 分`;
+    hbEl.className = "pill "+(age<20?"ok":"bad"); }
+  document.getElementById("upd").textContent = "更新 "+new Date().toLocaleTimeString("zh-TW",{hour12:false,timeZone:"Asia/Taipei"});
+
+  // 實盤 tiles
+  if(live){
+    const real = live.total_pnl/VBASE*CAP, wr = live.total_trades?Math.round(live.wins/live.total_trades*100):0;
+    const pos = live.position>0?`持倉 @$${live.entry_price.toFixed(2)}`:"空倉";
+    const halt = live.halt_until && new Date(live.halt_until)>new Date() ? "🛑 風控停機" : "";
+    document.getElementById("live-tiles").innerHTML =
+      tile("真實累計損益", (real>=0?"+":"")+real.toFixed(2)+" U", pct(live).toFixed(2)+"%", cls(real)) +
+      tile("交易 / 勝率", `${live.total_trades}筆 / ${wr}%`, "加碼門檻：20筆且勝率≥60%") +
+      tile("目前狀態", halt||pos, halt?("至 "+live.halt_until.slice(5,16)):"") +
+      tile("連敗計數", live.consecutive_losses+" / 3", "達3觸發熔斷");
   }
-}
 
-function buildSubTabs(asset) {
-  const strats = ASSET_STRATS[asset];
-  document.getElementById("sub-tabs").innerHTML = strats.map(s =>
-    `<div class="tab ${s === activeStrat ? 'active' : ''}" onclick="switchStrat('${s}')">${SUB_LABELS[s]}</div>`
-  ).join("");
-}
-
-function switchStrat(s) {
-  activeStrat = s;
-  buildSubTabs(activeAsset);
-  if (allData) renderDetail(s);
-}
-
-function goToStrat(asset, strat) {
-  activeAsset = asset;
-  activeStrat = strat;
-  document.querySelectorAll(".tab").forEach((el, i) => {
-    el.classList.toggle("active", ["overview","BTC","ETH"][i] === asset);
-  });
-  document.getElementById("view-overview").classList.add("hidden");
-  document.getElementById("view-detail").classList.remove("hidden");
-  document.querySelectorAll(".tab").forEach((el, i) => {
-    el.classList.toggle("active", ["overview","BTC","ETH","SOL"][i] === asset);
-  });
-  buildSubTabs(asset);
-  if (allData) renderDetail(strat);
-}
-
-let chartInstance = null;
-function tsToMs(t) {
-  if (!t) return null;
-  const d = new Date(String(t).replace(" ","T") + (String(t).includes("Z") ? "" : "Z"));
-  return d.getTime();
-}
-function renderChart(data) {
-  const colors = { A:"#f5a623", B:"#34c759", C:"#5ac8fa", D:"#ff9500", ETH_B:"#bf5af2", ETH_C:"#ff3b30", SOL_B:"#00e5ff", SOL_C:"#76ff03", BTC_E:"#ff6b9d", BTC_SHORT:"#ff453a" };
-  const datasets = ["A","B","C","D","ETH_B","ETH_C","SOL_B","SOL_C","BTC_E","BTC_SHORT"].map(s => {
-    const hist = data[s]?.history || [];
-    return {
-      label: STRATEGY_LABELS[s],
-      data: hist.map(r => ({ x: tsToMs(r[0]), y: parseFloat(r[1]) })).filter(p => p.x && !isNaN(p.y)),
-      borderColor: colors[s],
-      backgroundColor: "transparent",
-      borderWidth: 2,
-      pointRadius: 0,
-      tension: 0.15,
-    };
-  }).filter(d => d.data.length > 0);
-
-  const canvas = document.getElementById("equity-chart");
-  if (!canvas) return;
-  if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
-  if (datasets.length === 0) return;
-
-  chartInstance = new Chart(canvas.getContext("2d"), {
-    type: "line",
-    data: { datasets },
-    options: {
-      maintainAspectRatio: false,
-      interaction: { mode: "nearest", intersect: false },
-      scales: {
-        x: {
-          type: "linear",
-          ticks: { color: "#888", font: { size: 9 }, maxTicksLimit: 5,
-            callback: (v) => toTW(new Date(v).toISOString()) },
-          grid: { color: "#222" },
-        },
-        y: {
-          ticks: { color: "#888", font: { size: 9 } },
-          grid: { color: "#222" },
-        },
-      },
-      plugins: {
-        legend: { labels: { color: "#ccc", boxWidth: 10, font: { size: 10 } } },
-      },
-    },
-  });
-}
-
-function renderOverview(data) {
-  const priceA = data.A?.dashboard?.["BTC 現價"] || "—";
-  document.getElementById("btc-price").textContent = priceA;
-  document.getElementById("last-update").textContent =
-    "資料時間：" + toTW(data.A?.dashboard?.["最後更新"]) + " 台灣時間";
-
-  const grid = document.getElementById("overview-grid");
-  grid.innerHTML = ["A","B","C","D","ETH_B","ETH_C","SOL_B","SOL_C","BTC_E","BTC_SHORT"].map(s => {
-    const d   = data[s]?.dashboard || {};
-    const ret = d["累計報酬"] || "0%";
-    const retN = parseFloat(ret);
-    const cls  = retN > 0 ? "green" : retN < 0 ? "red" : "white";
-    const pos  = d["持倉狀態"] || "空倉中";
-    const isHolding = pos !== "空倉中";
-    const trades = d["總交易次數"] || 0;
-    const wr     = d["勝率"] || "—";
-    const hasT   = parseInt(trades) > 0;
-    const asset  = s.startsWith('ETH') ? 'ETH' : s.startsWith('SOL') ? 'SOL' : 'BTC';
-    return `<div class="ov-card" onclick="goToStrat('${asset}','${s}')">
-      <div class="ov-label">策略${s}</div>
-      <div class="ov-name">${STRATEGY_LABELS[s]}</div>
-      <div class="ov-return ${cls}">${ret}</div>
-      ${hasT
-        ? `<div class="ov-trades-btn" onclick="event.stopPropagation(); showTradeModal('${s}')">${trades} 筆 · 勝率 ${wr} ▸</div>`
-        : `<div class="ov-trades">0 筆</div>`}
-      <div class="ov-status ${isHolding ? 'holding':'empty'}">${isHolding ? '持倉中' : '空倉'}</div>
-    </div>`;
+  // A/B 賽場
+  const ps = {SOL_B:pb, SOL_B_V2:p2, SOL_B_V3:p3};
+  let best=null,bv=-1e9;
+  for(const k in ps){ if(ps[k]&&ps[k].total_trades>=5&&pct(ps[k])>bv){bv=pct(ps[k]);best=k} }
+  document.getElementById("race").innerHTML = Object.keys(S).map(k=>{
+    const p=ps[k]; if(!p) return `<div class="card"><div class="name"><span class="dot" style="background:${S[k].c}"></span>${S[k].n}</div><div class="meta">資料累積中…</div></div>`;
+    const wr=p.total_trades?Math.round(p.wins/p.total_trades*100):0;
+    return `<div class="card ${k===best?"lead":""}"><div class="name"><span class="dot" style="background:${S[k].c}"></span>${S[k].n} ${k===best?'<span class="tag">領先</span>':''}</div>
+      <div class="ret ${cls(pct(p))}">${pct(p)>=0?"+":""}${pct(p).toFixed(2)}%</div>
+      <div class="meta">${p.total_trades}筆・勝率${wr}%・${p.position>0?"持倉":"空倉"}</div></div>`;
   }).join("");
+
+  // 其他觀察倉
+  const oth = [["A（BTC 布林+MACD）",pa],["ETH_B（熔斷待修）",pe]];
+  document.getElementById("others").innerHTML = oth.map(([n,p])=>{
+    if(!p) return "";
+    const wr=p.total_trades?Math.round(p.wins/p.total_trades*100):0;
+    const cb=p.consecutive_losses>=3?' <span class="tag">🔴熔斷</span>':"";
+    return `<div class="card"><div class="name">${n}${cb}</div><div class="ret ${cls(pct(p))}">${pct(p)>=0?"+":""}${pct(p).toFixed(2)}%</div><div class="meta">${p.total_trades}筆・勝率${wr}%</div></div>`;
+  }).join("");
+
+  // 實盤交易表
+  const rows = parseCsv(liveCsv).slice(-10).reverse();
+  document.querySelector("#trades tbody").innerHTML = rows.map(r=>{
+    const v=parseFloat((r.pnl_pct||"").replace("%","")), real=isNaN(v)?"":((v>=0?"+":"")+(v/100*CAP).toFixed(2)+" U");
+    return `<tr><td>${tw(r.time)}</td><td>${r.action==="BUY"?"買入":"賣出"}</td><td>$${parseFloat(r.price).toFixed(2)}</td>
+      <td class="${isNaN(v)?"":cls(v)}">${r.pnl_pct||"—"}</td><td class="${isNaN(v)?"":cls(v)}">${real||"—"}</td><td>${r.reason||""}</td></tr>`;
+  }).join("") || '<tr><td colspan="6">尚無紀錄</td></tr>';
+
+  // 資金曲線（各版本 paper_trade_log）
+  drawChart(await Promise.all(["paper_trade_log_sol_b.csv","paper_trade_log_sol_b_v2.csv","paper_trade_log_sol_b_v3.csv"].map(t)));
 }
 
-function renderDetail(s) {
-  const data   = allData[s] || {};
-  const d      = data.dashboard || {};
-  const logs   = data.logs   || [];
-  const trades = data.trades || [];
-
-  document.getElementById("strategy-name-label").textContent =
-    `策略${s}：${STRATEGY_LABELS[s]} — 帳戶概覽`;
-
-  const pos = d["持倉狀態"] || "空倉中";
-  const isHolding = pos !== "空倉中";
-  const banner = document.getElementById("status-banner");
-  if (isHolding) {
-    banner.className = "status-banner holding";
-    banner.innerHTML = `<span class="status-dot dot-holding"></span>
-      <div><div class="status-text green">持倉中</div><div class="status-sub">${pos}</div></div>`;
-  } else {
-    banner.className = "status-banner empty";
-    banner.innerHTML = `<span class="status-dot dot-empty"></span>
-      <div><div class="status-text" style="color:#aaa">空倉中</div>
-      <div class="status-sub">等待進場訊號</div></div>`;
-  }
-
-  const retStr = d["累計報酬"] || "0%";
-  const retN   = parseFloat(retStr);
-  const pnlStr = d["累計已實現損益"] || "$0.00";
-  const pnlN   = parseFloat(String(pnlStr).replace(/[$,]/g,""));
-  const totalAssets = (1000 * (1 + retN / 100)).toFixed(2);
-
-  document.getElementById("c-total").textContent    = "$" + parseFloat(totalAssets).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
-  document.getElementById("c-total").className      = "card-value " + (retN >= 0 ? "green" : "red");
-  document.getElementById("c-total-sub").textContent = (retN >= 0 ? "+" : "") + retStr + " 較初始";
-  const cashRaw = d["現金餘額"];
-  const nocash  = !cashRaw || cashRaw === "—";
-  document.getElementById("c-cash").textContent     = nocash ? "持倉中" : cashRaw;
-  document.getElementById("c-cash").className       = "card-value " + (nocash ? "gold" : "white");
-  document.getElementById("c-cash-sub").textContent = nocash ? "資金已買入 BTC" : "可用 USDT";
-  document.getElementById("c-return").textContent   = retStr;
-  document.getElementById("c-return").className     = "card-value " + (retN >= 0 ? "green" : "red");
-  document.getElementById("c-pnl").textContent      = pnlStr;
-  document.getElementById("c-pnl").className        = "card-value " + (pnlN >= 0 ? "green" : "red");
-  const tradeCount = d["總交易次數"] || "0";
-  const tradeEl2 = document.getElementById("c-trades");
-  if (parseInt(tradeCount) > 0) {
-    tradeEl2.innerHTML = `<span style="cursor:pointer;text-decoration:underline dotted;color:var(--gold)"
-      onclick="document.getElementById('trade-section').scrollIntoView({behavior:'smooth'})">${tradeCount}</span>`;
-  } else {
-    tradeEl2.textContent = tradeCount;
-  }
-  document.getElementById("c-wr").textContent       = d["勝率"] || "—";
-
-  const logEl = document.getElementById("log-list");
-  if (!logs.length) {
-    logEl.innerHTML = '<div class="empty-state">尚無監測資料</div>';
-  } else {
-    logEl.innerHTML = logs.map(r => {
-      const hasSignal = r[7] && r[7] !== "無訊號";
-      const priceFmt = "$" + parseFloat(r[1]||0).toLocaleString("en-US",{maximumFractionDigits:0});
-      return `<div class="log-item">
-        <div class="log-icon">${hasSignal ? "⚡" : "·"}</div>
-        <div class="log-body">
-          <div class="log-time">${toTWDual(r[0])}</div>
-          <div class="log-row">
-            <span class="log-price">${priceFmt}</span>
-            <span class="log-badge ${hasSignal ? "badge-signal":"badge-wait"}">${hasSignal ? r[7] : "待機"}</span>
-          </div>
-          <div class="log-meta">${r[5]} &nbsp;·&nbsp; ${r[6]}</div>
-        </div>
-      </div>`;
-    }).join("");
-  }
-
-  const tradeEl = document.getElementById("trade-list");
-  if (!trades.length) {
-    tradeEl.innerHTML = '<div class="empty-state">尚無交易紀錄</div>';
-  } else {
-    // 格式化輔助（Sheets 把 "-1.07%" 字串自動轉為數字 -0.0107）
-    function fmtPct(raw) {
-      if (raw === "" || raw === null || raw === undefined) return "";
-      if (typeof raw === "number") {
-        const p = raw * 100;
-        return (p >= 0 ? "+" : "") + p.toFixed(2) + "%";
-      }
-      return String(raw);
-    }
-    function fmtUSD(n) {
-      return "$" + parseFloat(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    }
-    function fmtP(n) {
-      return "$" + parseFloat(n || 0).toLocaleString("en-US", { maximumFractionDigits: 1 });
-    }
-    const COM = 0.001;
-    // 配對：trades 新→舊；遇到連續 SELL 跳過重複
-    const pairs = [];
-    let i = 0;
-    while (i < trades.length) {
-      const action = String(trades[i][1] || "").trim();
-      if (action === "SELL") {
-        let j = i + 1;
-        while (j < trades.length && String(trades[j][1] || "").trim() === "SELL") j++;
-        pairs.push({ sell: trades[i], buy: j < trades.length ? trades[j] : null });
-        i = j + 1;
-      } else {
-        pairs.push({ sell: null, buy: trades[i] });
-        i++;
-      }
-    }
-    tradeEl.innerHTML = pairs.map(p => {
-      const isOpen  = !p.sell;
-      const buy     = p.buy;
-      const sell    = p.sell;
-      const bPrice  = parseFloat(buy?.[2] || 0);
-      const sPrice  = parseFloat(sell?.[2] || 0);
-      const qty     = parseFloat(buy?.[3] || sell?.[3] || 0);
-      const cost    = bPrice * qty * (1 + COM);
-      const proc    = sPrice * qty * (1 - COM);
-      const pnlAmt  = proc - cost;
-      const pnlPct  = fmtPct(sell?.[4]);
-      const isWin   = pnlPct.startsWith("+");
-      const pnlCls  = pnlPct ? (isWin ? "green" : "red") : "";
-      const sBadge  = isWin ? "pb-sell-win" : "pb-sell-loss";
-      const reason  = sell ? sell[6] : (buy ? buy[6] : "");
-      return `<div class="pair-card ${isOpen ? 'open' : ''}">
-        <div class="pair-row">
-          <span class="pair-badge pb-buy">買入</span>
-          <div class="pair-info">
-            <div class="pair-price">${fmtP(bPrice)}</div>
-            <div class="pair-qty">數量 ${qty.toFixed(4)} &nbsp;·&nbsp; 成本 ${fmtUSD(cost)}</div>
-          </div>
-          <div class="pair-right">
-            <div class="pair-pnl" style="color:var(--sub);font-size:12px">進場</div>
-            <div class="pair-time">${buy ? toTW(buy[0]) : "—"}</div>
-          </div>
-        </div>
-        ${isOpen
-          ? `<div class="pair-row"><span class="pair-badge pb-open">持倉中</span>
-             <div class="pair-info" style="color:var(--gold);font-size:13px">等待出場訊號</div></div>`
-          : `<div class="pair-row">
-               <span class="pair-badge ${sBadge}">賣出</span>
-               <div class="pair-info">
-                 <div class="pair-price">${fmtP(sPrice)}</div>
-                 <div class="pair-qty">所得 ${fmtUSD(proc)} &nbsp;·&nbsp; 損益 <span class="${pnlCls}">${fmtUSD(pnlAmt)}</span></div>
-               </div>
-               <div class="pair-right">
-                 <div class="pair-pnl ${pnlCls}">${pnlPct || "—"}</div>
-                 <div class="pair-time">${sell ? toTW(sell[0]) : "—"}</div>
-               </div>
-             </div>
-             ${reason ? `<div class="pair-reason">${reason}</div>` : ""}`
-        }
-      </div>`;
-    }).join("");
-  }
+function drawChart(csvs){
+  const svg=document.getElementById("equity-chart"), keys=Object.keys(S);
+  const series=csvs.map(c=>parseCsv(c).filter(r=>r.action==="SELL").map(r=>({t:new Date(r.time.replace(" ","T")+":00Z"),v:parseFloat(r.capital_after)})));
+  const all=series.flat();
+  if(all.length<2){ document.getElementById("chart-note").textContent="（比賽剛開始，資金曲線待累積）"; svg.innerHTML=""; return }
+  const W=1000,H=260,P={l:56,r:120,t:12,b:24};
+  const xs=all.map(d=>d.t.getTime()), ys=all.map(d=>d.v).concat([VBASE]);
+  const x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys)*0.998,y1=Math.max(...ys)*1.002;
+  const X=v=>P.l+(v-x0)/(x1-x0||1)*(W-P.l-P.r), Y=v=>H-P.b-(v-y0)/(y1-y0||1)*(H-P.t-P.b);
+  let g="";
+  for(let i=0;i<=3;i++){ const yv=y0+(y1-y0)*i/3, y=Y(yv);
+    g+=`<line x1="${P.l}" y1="${y}" x2="${W-P.r}" y2="${y}" stroke="var(--line)" stroke-width="1"/>
+        <text x="${P.l-8}" y="${y+4}" fill="var(--ink3)" font-size="11" text-anchor="end">$${yv.toFixed(0)}</text>`}
+  g+=`<line x1="${P.l}" y1="${Y(VBASE)}" x2="${W-P.r}" y2="${Y(VBASE)}" stroke="var(--ink3)" stroke-width="1" stroke-dasharray="4 4"/>`;
+  series.forEach((s,i)=>{ if(!s.length) return;
+    const pts=[{t:new Date(x0),v:VBASE},...s];
+    const d=pts.map((p,j)=>(j?"L":"M")+X(p.t.getTime()).toFixed(1)+" "+Y(p.v).toFixed(1)).join(" ");
+    const c=S[keys[i]].c, last=pts[pts.length-1];
+    g+=`<path d="${d}" fill="none" stroke="${c}" stroke-width="2" stroke-linejoin="round"/>
+        <circle cx="${X(last.t.getTime())}" cy="${Y(last.v)}" r="4" fill="${c}" stroke="var(--card)" stroke-width="2"/>
+        <text x="${X(last.t.getTime())+8}" y="${Y(last.v)+4}" fill="var(--ink2)" font-size="11">${S[keys[i]].n} $${last.v.toFixed(0)}</text>`;
+  });
+  document.getElementById("chart-note").textContent="";
+  svg.innerHTML=g;
 }
 
-function closeTradeModal(e) {
-  if (e && e.target !== document.getElementById("trade-modal-overlay")) return;
-  document.getElementById("trade-modal-overlay").classList.add("hidden");
-}
-
-function showTradeModal(stratKey) {
-  const data   = allData?.[stratKey];
-  if (!data) return;
-  const trades = data.trades || [];
-  const d      = data.dashboard || {};
-
-  document.getElementById("modal-title").textContent = `策略${stratKey} 交易明細`;
-
-  // 摘要列
-  const total  = parseInt(d["總交易次數"] || 0);
-  const wlStr  = String(d["勝 / 敗"] || "");
-  const wins   = parseInt(wlStr.match(/^(\d+)/)?.[1] || 0);
-  const losses = total - wins;
-  const pnlRaw = d["累計已實現損益"] || "$0.00";
-  const wr     = d["勝率"] || "—";
-  const pnlN   = parseFloat(String(pnlRaw).replace(/[$,]/g,""));
-  document.getElementById("modal-summary").innerHTML = `
-    <div class="modal-stat"><div class="modal-stat-v">${total}</div><div class="modal-stat-l">總交易</div></div>
-    <div class="modal-stat"><div class="modal-stat-v green">${wins}</div><div class="modal-stat-l">獲利</div></div>
-    <div class="modal-stat"><div class="modal-stat-v red">${losses}</div><div class="modal-stat-l">虧損</div></div>
-    <div class="modal-stat"><div class="modal-stat-v">${wr}</div><div class="modal-stat-l">勝率</div></div>
-    <div class="modal-stat"><div class="modal-stat-v ${pnlN>=0?'green':'red'}">${pnlRaw}</div><div class="modal-stat-l">已實現損益</div></div>`;
-
-  // 格式化損益百分比 — Sheets 把 "-1.07%" 字串自動轉成數字 -0.0107，需做兩手處理
-  function fmtPnlPct(raw) {
-    if (raw === "" || raw === null || raw === undefined) return "";
-    if (typeof raw === "number") {
-      const pct = raw * 100;
-      return (pct >= 0 ? "+" : "") + pct.toFixed(2) + "%";
-    }
-    return String(raw);
-  }
-
-  // 格式化金額
-  function fmtUSD(n) {
-    return "$" + parseFloat(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  }
-  function fmtPrice(n) {
-    return "$" + parseFloat(n || 0).toLocaleString("en-US", { maximumFractionDigits: 1 });
-  }
-
-  // 配對買賣（trades 是新→舊，index 0 最新）
-  // 跳過連續兩個 SELL 的情況（重複記錄）
-  const COMMISSION = 0.001;
-  const pairs = [];
-  let i = 0;
-  while (i < trades.length) {
-    const r      = trades[i];
-    const action = String(r[1] || "").trim();
-    if (action === "SELL") {
-      // 往後找最近的 BUY，跳過連續 SELL（重複）
-      let j = i + 1;
-      while (j < trades.length && String(trades[j][1] || "").trim() === "SELL") j++;
-      const buy = j < trades.length ? trades[j] : null;
-      pairs.push({ sell: r, buy });
-      i = j + 1;
-    } else {
-      // BUY 沒有配對 SELL = 目前持倉中
-      pairs.push({ sell: null, buy: r });
-      i += 1;
-    }
-  }
-
-  document.getElementById("modal-pair-list").innerHTML = pairs.map((p) => {
-    const isOpen = !p.sell;
-    const buy    = p.buy;
-    const sell   = p.sell;
-
-    const buyPriceN  = parseFloat(buy?.[2] || 0);
-    const sellPriceN = parseFloat(sell?.[2] || 0);
-    const qty        = parseFloat(buy?.[3] || sell?.[3] || 0);
-    const cost       = buyPriceN  * qty * (1 + COMMISSION);
-    const proceeds   = sellPriceN * qty * (1 - COMMISSION);
-    const pnlAmt     = proceeds - cost;
-
-    const pnlPct  = fmtPnlPct(sell?.[4]);
-    const isWin   = pnlPct.startsWith("+");
-    const pnlCls  = !pnlPct ? "" : (isWin ? "green" : "red");
-    const sellBadge = isWin ? "pb-sell-win" : "pb-sell-loss";
-    const reason  = sell ? sell[6] : (buy ? buy[6] : "");
-
-    return `<div class="pair-card ${isOpen ? 'open' : ''}">
-      <div class="pair-row">
-        <span class="pair-badge pb-buy">買入</span>
-        <div class="pair-info">
-          <div class="pair-price">${fmtPrice(buyPriceN)}</div>
-          <div class="pair-qty">數量 ${qty.toFixed(4)} · 成本 ${fmtUSD(cost)}</div>
-        </div>
-        <div class="pair-right">
-          <div class="pair-pnl" style="color:var(--sub);font-size:12px">進場</div>
-          <div class="pair-time">${buy ? toTW(buy[0]) : "—"}</div>
-        </div>
-      </div>
-      ${isOpen
-        ? `<div class="pair-row"><span class="pair-badge pb-open">持倉中</span><div class="pair-info" style="color:var(--gold);font-size:13px">等待出場訊號</div></div>`
-        : `<div class="pair-row">
-            <span class="pair-badge ${sellBadge}">賣出</span>
-            <div class="pair-info">
-              <div class="pair-price">${fmtPrice(sellPriceN)}</div>
-              <div class="pair-qty">所得 ${fmtUSD(proceeds)} · 損益 <span class="${pnlCls}">${fmtUSD(pnlAmt)}</span></div>
-            </div>
-            <div class="pair-right">
-              <div class="pair-pnl ${pnlCls}">${pnlPct || "—"}</div>
-              <div class="pair-time">${sell ? toTW(sell[0]) : "—"}</div>
-            </div>
-          </div>
-          ${reason ? `<div class="pair-reason">${reason}</div>` : ""}`
-      }
-    </div>`;
-  }).join("") || '<div class="empty-state">尚無交易紀錄</div>';
-
-  document.getElementById("trade-modal-overlay").classList.remove("hidden");
-}
-
-let loading = false;
-async function doRefresh() {
-  if (loading) return;
-  loading = true;
-  document.getElementById("refresh-btn").classList.add("loading");
-  document.getElementById("last-update").textContent = "更新中...";
-  try {
-    const resp = await fetch(GS_URL + "?t=" + Date.now());
-    allData = await resp.json();
-    renderOverview(allData);
-    renderChart(allData);
-    if (activeAsset !== "overview") renderDetail(activeStrat);
-    document.getElementById("last-update").textContent =
-      "資料時間：" + toTW(allData.A?.dashboard?.["最後更新"]) + " 台灣時間";
-  } catch(e) {
-    document.getElementById("last-update").textContent = "⚠️ 連線失敗，請再試";
-  }
-  loading = false;
-  document.getElementById("refresh-btn").classList.remove("loading");
-}
-
-doRefresh();
-setInterval(doRefresh, 300000);
+refresh();
+setInterval(refresh, 300000);
 </script>
 </body>
 </html>
