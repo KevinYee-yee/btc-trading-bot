@@ -37,6 +37,7 @@ jobs:
         env:
           STRATEGY:         B
           SYMBOL:           SOL/USDT
+          RSI_SELL:         "70"
           LIVE_TRADE:       "true"
           LIVE_CAPITAL:     ${{ vars.LIVE_CAPITAL_SOL_B || '45' }}
           OKX_API_KEY:      ${{ secrets.OKX_API_KEY }}
