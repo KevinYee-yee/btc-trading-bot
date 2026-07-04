@@ -12,7 +12,7 @@ import os
 import time
 import urllib.request
 import urllib.parse
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 # ─────────────────────────────────────────────
 # 設定
@@ -93,6 +93,74 @@ if LIVE_TRADE:
 # 緊急停止 & 實盤輔助函數（缺口3/4/5/6/7）
 # ─────────────────────────────────────────────
 EMERGENCY_STOP_FILE = "emergency_stop"
+
+REGIME_GATE = os.environ.get("REGIME_GATE", "true").lower() == "true"  # 實盤情境閘門開關
+
+def _fetch_daily(symbol, limit=80):
+    ex = ccxt.okx({"enableRateLimit": True})
+    o = ex.fetch_ohlcv(symbol, "1d", limit=limit)
+    return pd.DataFrame(o, columns=["ts", "open", "high", "low", "close", "vol"])
+
+def _daily_adx(d, n=14):
+    h, l, c = d["high"], d["low"], d["close"]
+    up, dn = h.diff(), -l.diff()
+    pdm = pd.Series(np.where((up > dn) & (up > 0), up, 0.0), index=d.index)
+    mdm = pd.Series(np.where((dn > up) & (dn > 0), dn, 0.0), index=d.index)
+    tr  = pd.concat([h - l, (h - c.shift()).abs(), (l - c.shift()).abs()], axis=1).max(axis=1)
+    atr = tr.ewm(alpha=1/n, adjust=False).mean()
+    pdi = 100 * pdm.ewm(alpha=1/n, adjust=False).mean() / atr
+    mdi = 100 * mdm.ewm(alpha=1/n, adjust=False).mean() / atr
+    dx  = 100 * (pdi - mdi).abs() / (pdi + mdi)
+    return dx.ewm(alpha=1/n, adjust=False).mean().iloc[-1]
+
+def _regime_gate():
+    """情境閘門（外部審查團 P0）：大盤或標的日線轉弱、死盤整時禁止新倉。
+    只擋進場，不影響出場。資料取失敗時放行（fail-open），避免誤停交易。"""
+    try:
+        d = _fetch_daily(SYMBOL)
+        ema50 = d["close"].ewm(span=50, adjust=False).mean().iloc[-1]
+        if d["close"].iloc[-1] < ema50:
+            return False, f"{ASSET}日線 {d['close'].iloc[-1]:.2f} < EMA50 {ema50:.2f}（標的轉弱）"
+        adx = _daily_adx(d)
+        if adx < 18:
+            return False, f"日線ADX {adx:.0f} < 18（死盤整，勝率窪地）"
+        if ASSET != "BTC":
+            b = _fetch_daily("BTC/USDT")
+            bema = b["close"].ewm(span=50, adjust=False).mean().iloc[-1]
+            if b["close"].iloc[-1] < bema:
+                return False, f"BTC日線 {b['close'].iloc[-1]:.0f} < EMA50 {bema:.0f}（大盤偏空）"
+        return True, f"日線ADX {adx:.0f}，多頭閘門開"
+    except Exception as e:
+        print(f"  ⚠️ 情境閘門資料取得失敗，本次放行：{e}")
+        return True, "gate-error"
+
+def _risk_check_after_sell(portfolio, pnl_pct):
+    """實盤風控三件套（外部審查團 P0）：
+    ①峰值回撤≤-10% → 停機7天冷靜期 ②滾動10筆淨損≤-4% → 熔斷48h ③單日≤-3% → 當日停單"""
+    if not LIVE_TRADE:
+        return
+    now = datetime.now(timezone.utc)
+    rp = portfolio.get("recent_pnls", [])
+    rp.append(round(pnl_pct, 3))
+    portfolio["recent_pnls"] = rp[-10:]
+    today = now.astimezone(timezone(timedelta(hours=8))).strftime("%Y-%m-%d")
+    if portfolio.get("day_date") != today:
+        portfolio["day_date"], portfolio["day_pnl"] = today, 0.0
+    portfolio["day_pnl"] = round(portfolio.get("day_pnl", 0.0) + pnl_pct, 3)
+    peak = max(portfolio.get("peak_capital", INITIAL_CAPITAL), portfolio["capital"])
+    portfolio["peak_capital"] = peak
+    dd = (portfolio["capital"] - peak) / peak * 100
+
+    halt, why = None, ""
+    if dd <= -10:
+        halt, why = now + timedelta(days=7), f"帳戶自峰值回撤 {dd:.1f}%（≤-10%）→ 全面停機 7 天冷靜期"
+    elif len(portfolio["recent_pnls"]) >= 5 and sum(portfolio["recent_pnls"]) <= -4:
+        halt, why = now + timedelta(hours=48), f"滾動{len(portfolio['recent_pnls'])}筆淨損 {sum(portfolio['recent_pnls']):.1f}%（≤-4%）→ 熔斷 48 小時"
+    elif portfolio["day_pnl"] <= -3:
+        halt, why = now + timedelta(hours=12), f"單日虧損 {portfolio['day_pnl']:.1f}%（≤-3%）→ 今日停單"
+    if halt:
+        portfolio["halt_until"] = halt.isoformat()
+        notify(f"🛑 【實盤風控】{STRAT_KEY} {why}\n恢復：{halt.strftime('%m/%d %H:%M')} UTC（台灣+8h）")
 
 def check_emergency_stop():
     """缺口7：emergency_stop 檔案存在時跳過所有操作"""
@@ -225,6 +293,7 @@ def _live_sync_position(portfolio):
             portfolio["total_pnl"]         += pnl
             portfolio["consecutive_losses"] = portfolio.get("consecutive_losses", 0) + 1
             portfolio["live_algo_id"]       = ""
+            _risk_check_after_sell(portfolio, pnl_pct)
             log_trade("SELL", stop_px, json_qty, pnl_pct, "交易所止損觸發", portfolio)
             save_portfolio(portfolio)
             notify(f"🔴 【實盤】出場｜{STRATEGY_LABEL.get(STRAT_KEY)}\n"
@@ -498,6 +567,20 @@ def run():
         })
         return
 
+    # ── 實盤保護（外部審查團P0）：風控停機 + 情境閘門（只擋新倉）──
+    if LIVE_TRADE:
+        halt_until = portfolio.get("halt_until", "")
+        if halt_until and datetime.now(timezone.utc).isoformat() < halt_until:
+            print(f"  🛑 風控停機中（至 {halt_until[:16]}）跳過進場")
+            save_portfolio(portfolio)
+            return
+        if REGIME_GATE:
+            gate_ok, gate_why = _regime_gate()
+            if not gate_ok:
+                print(f"  ⛔ 情境閘門關閉：{gate_why}，跳過進場")
+                save_portfolio(portfolio)
+                return
+
     # ── 冷卻期檢查（B/ETH_B + D 用）────────
     in_cooldown = False
     if STRATEGY in ("B", "D"):
@@ -620,6 +703,7 @@ def _execute_sell(df, latest, portfolio, price, bb_upper, bb_lower, reason, now_
     else:
         portfolio["losses"]           += 1
         portfolio["consecutive_losses"] = portfolio.get("consecutive_losses", 0) + 1
+    _risk_check_after_sell(portfolio, pnl_pct)
     log_trade("SELL", price, qty, pnl_pct, reason, portfolio)
     save_portfolio(portfolio)
     sheets_post({"type":"trade","time":now_time,"action":"SELL","price":str(price),
