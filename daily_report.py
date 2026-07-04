@@ -24,6 +24,7 @@ ACTIVE = {
     "SOL_B":    ("paper_portfolio_sol_b.json",    "主力策略"),
     "SOL_B_V2": ("paper_portfolio_sol_b_v2.json", "A/B變體(+1%出場門檻)"),
     "SOL_B_V3": ("paper_portfolio_sol_b_v3.json", "A/B變體(RSI70出場·回測+14.4%)"),
+    "HYPE_B":   ("paper_portfolio_hype_b.json",     "新標的驗證(體質全過)"),
     "A":        ("paper_portfolio.json",           "BTC觀察中"),
     "ETH_B":    ("paper_portfolio_eth_b.json",     "熔斷待修"),
 }
@@ -146,9 +147,10 @@ def weather_lines():
             e50 = _ema_last(closes, 50); c = closes[-1]
             dist = (c/e50 - 1) * 100
             ok = c > e50
-            conds.append(ok)
+            if name == "SOL":
+                conds.append(ok)
             out.append(f"{name}: {'☀️' if ok else '🌧️'} {dist:+.1f}% {'高於' if ok else '低於'}50日線" +
-                       ("" if ok else f"（開閘還差 {abs(dist):.1f}%）"))
+                       ("（參考，G2閘門不看BTC）" if name == "BTC" else ("" if ok else f"（開閘還差 {abs(dist):.1f}%）")))
             if name == "SOL":
                 adx = _adx_last(rows)
                 conds.append(adx >= 18)

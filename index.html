@@ -89,10 +89,10 @@ function parseCsv(txt){
 }
 
 async function refresh(){
-  const [live, hb, liveCsv, pb, p2, p3, pa, pe] = await Promise.all([
+  const [live, hb, liveCsv, pb, p2, p3, pa, pe, ph] = await Promise.all([
     j("live_portfolio_sol_b.json"), t("live_heartbeat.txt"), t("live_trade_log_sol_b.csv"),
     j("paper_portfolio_sol_b.json"), j("paper_portfolio_sol_b_v2.json"), j("paper_portfolio_sol_b_v3.json"),
-    j("paper_portfolio.json"), j("paper_portfolio_eth_b.json")
+    j("paper_portfolio.json"), j("paper_portfolio_eth_b.json"), j("paper_portfolio_hype_b.json")
   ]);
 
   // 心跳健康燈
@@ -127,7 +127,7 @@ async function refresh(){
   }).join("");
 
   // 其他觀察倉
-  const oth = [["A（BTC 布林+MACD）",pa],["ETH_B（熔斷待修）",pe]];
+  const oth = [["HYPE_B（新標的驗證）",ph],["A（BTC 布林+MACD）",pa],["ETH_B（熔斷待修）",pe]];
   document.getElementById("others").innerHTML = oth.map(([n,p])=>{
     if(!p) return "";
     const wr=p.total_trades?Math.round(p.wins/p.total_trades*100):0;

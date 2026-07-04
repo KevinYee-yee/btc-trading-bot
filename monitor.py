@@ -38,16 +38,9 @@ EMA_SLOW        = 48
 COOLDOWN_BARS   = 4   # P1：出場後冷卻根數（B/ETH_B 用）
 EMA_TREND_BARS  = 48  # 策略B趨勢過濾 lookback（根）：原20根(5h)→48根(12h)，2026-06-21 5人會議
 
-# 策略唯一鍵（含標的前綴）
-if "ETH" in SYMBOL:
-    ASSET = "ETH"
-    STRAT_KEY = f"ETH_{STRATEGY}"
-elif "SOL" in SYMBOL:
-    ASSET = "SOL"
-    STRAT_KEY = f"SOL_{STRATEGY}"
-else:
-    ASSET = "BTC"
-    STRAT_KEY = STRATEGY
+# 策略唯一鍵（含標的前綴）：BTC 沿用裸鍵，其餘幣種 = 幣名_策略
+ASSET = SYMBOL.split("/")[0] if "/" in SYMBOL else "BTC"
+STRAT_KEY = STRATEGY if ASSET == "BTC" else f"{ASSET}_{STRATEGY}"
 
 # A/B 測試變體：VARIANT=V2 → 獨立的 STRAT_KEY / portfolio / 交易紀錄
 VARIANT = os.environ.get("VARIANT", "")
@@ -132,7 +125,9 @@ def _regime_gate():
         adx = _daily_adx(d)
         if adx < 18:
             return False, f"日線ADX {adx:.0f} < 18（死盤整，勝率窪地）"
-        if ASSET != "BTC":
+        # G2閘門（2026-07-05 walk-forward判定）：預設不看BTC，標的自己的天氣自己決定
+        # 需要恢復BTC條件時設 GATE_BTC=true
+        if ASSET != "BTC" and os.environ.get("GATE_BTC", "false").lower() == "true":
             b = _fetch_daily("BTC/USDT")
             bema = b["close"].ewm(span=50, adjust=False).mean().iloc[-1]
             if b["close"].iloc[-1] < bema:
