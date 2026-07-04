@@ -30,8 +30,9 @@ MACD_FAST       = 12
 MACD_SLOW       = 26
 MACD_SIGNAL_P   = 9
 RSI_PERIOD      = 9
-RSI_BUY         = 40
-RSI_SELL        = 62
+RSI_BUY         = float(os.environ.get("RSI_BUY", "40"))
+RSI_SELL        = float(os.environ.get("RSI_SELL", "62"))
+MIN_PROFIT_PCT  = float(os.environ.get("MIN_PROFIT_PCT", "0"))  # B策略RSI出場最低獲利門檻（A/B測試用）
 EMA_FAST        = 13
 EMA_SLOW        = 48
 COOLDOWN_BARS   = 4   # P1：出場後冷卻根數（B/ETH_B 用）
@@ -48,6 +49,11 @@ else:
     ASSET = "BTC"
     STRAT_KEY = STRATEGY
 
+# A/B 測試變體：VARIANT=V2 → 獨立的 STRAT_KEY / portfolio / 交易紀錄
+VARIANT = os.environ.get("VARIANT", "")
+if VARIANT:
+    STRAT_KEY = f"{STRAT_KEY}_{VARIANT}"
+
 STRATEGY_LABEL = {
     "A":     "BTC 策略A：布林+MACD+RSI",
     "B":     "BTC 策略B：RSI(9)<40",
@@ -58,6 +64,8 @@ STRATEGY_LABEL = {
     "SOL_B": "SOL 策略B：RSI(9)<40",
     "SOL_C": "SOL 策略C：EMA13/48",
 }
+if VARIANT:
+    STRATEGY_LABEL.setdefault(STRAT_KEY, f"{ASSET} 策略{STRATEGY}·{VARIANT}變體")
 
 FORCE_TEST = os.environ.get("FORCE_TEST", "")
 TG_TOKEN   = os.environ.get("TELEGRAM_TOKEN", "")
@@ -476,7 +484,11 @@ def get_exit_reason(df, latest, portfolio):
     elif STRATEGY == "B":
         rsi = latest["rsi"]
         if rsi > RSI_SELL:
-            return f"RSI(9)>{RSI_SELL}超買出場"
+            # 變體：未達最低獲利門檻則續抱，避免+0.5%小贏單被摩擦吃光
+            if MIN_PROFIT_PCT > 0 and price < entry_price * (1 + MIN_PROFIT_PCT / 100):
+                pass
+            else:
+                return f"RSI(9)>{RSI_SELL:.0f}超買出場"
         if price < entry_price * 0.985:
             return "跌幅超過1.5%停損"
 
