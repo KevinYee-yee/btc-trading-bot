@@ -241,7 +241,9 @@ def _live_maker_buy(qty, ref_price):
 def _live_place_stop(qty, stop_price):
     """買入後在交易所掛止損市價單（毫秒級觸發，消滅停損穿透）；失敗則退回機器人10分鐘輪詢停損"""
     try:
-        o = live_exchange.create_order(SYMBOL, "market", "sell", qty, None, {"stopLossPrice": stop_price})
+        # 合約模式帳戶下現貨條件單需明確指定 tdMode=cash（50014 ccy 錯誤的修正）
+        o = live_exchange.create_order(SYMBOL, "market", "sell", qty, None,
+                                       {"stopLossPrice": stop_price, "tdMode": "cash"})
         print(f"  🛡️ 交易所止損已掛：跌至 ${stop_price:,.2f} 自動賣出")
         return o.get("id") or ""
     except Exception as e:
