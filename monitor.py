@@ -191,10 +191,12 @@ def _live_check_balance():
         return False
 
 def _live_get_position_qty():
-    """缺口6：從 OKX 讀取當前標的真實持倉量"""
+    """缺口6：從 OKX 讀取當前標的真實持倉量
+    用 total 而非 free：掛止損單期間幣會被凍結，free=0 曾導致誤判「止損已觸發」記假出場"""
     try:
         bal = live_exchange.fetch_balance()
-        return float(bal.get(ASSET, {}).get("free", 0))
+        a = bal.get(ASSET, {})
+        return float(a.get("total") or 0) or (float(a.get("free") or 0) + float(a.get("used") or 0))
     except Exception as e:
         notify(f"🚨 [{STRAT_KEY}] 持倉查詢失敗：{e}")
         return None
