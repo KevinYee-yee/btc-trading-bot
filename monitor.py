@@ -120,8 +120,12 @@ def _regime_gate():
     try:
         d = _fetch_daily(SYMBOL)
         ema50 = d["close"].ewm(span=50, adjust=False).mean().iloc[-1]
-        if d["close"].iloc[-1] < ema50:
-            return False, f"{ASSET}日線 {d['close'].iloc[-1]:.2f} < EMA50 {ema50:.2f}（標的轉弱）"
+        c_now, c_prev = d["close"].iloc[-1], d["close"].iloc[-2]
+        if c_now < ema50:
+            return False, f"{ASSET}日線 {c_now:.2f} < EMA50 {ema50:.2f}（標的轉弱）"
+        # 緩衝帶（2026-07-05週會風控決議）：貼線+動能向下=視同關閉，堵「日線未破但已在崩」空窗、防開關震盪
+        if c_now < ema50 * 1.02 and c_now < c_prev:
+            return False, f"{ASSET}日線 {c_now:.2f} 距EMA50不足2%且動能向下（緩衝帶）"
         adx = _daily_adx(d)
         if adx < 18:
             return False, f"日線ADX {adx:.0f} < 18（死盤整，勝率窪地）"
