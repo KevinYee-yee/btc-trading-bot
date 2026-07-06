@@ -33,6 +33,8 @@ RSI_PERIOD      = 9
 RSI_BUY         = float(os.environ.get("RSI_BUY", "40"))
 RSI_SELL        = float(os.environ.get("RSI_SELL", "62"))
 MIN_PROFIT_PCT  = float(os.environ.get("MIN_PROFIT_PCT", "0"))  # B策略RSI出場最低獲利門檻（A/B測試用）
+TRAIL_ARM_PCT   = float(os.environ.get("TRAIL_ARM_PCT", "0"))    # P3寬追蹤：浮盈達此%後啟動（0=關閉）
+TRAIL_PCT       = float(os.environ.get("TRAIL_PCT", "1.0"))      # P3寬追蹤：峰值回落%出場
 EMA_FAST        = 13
 EMA_SLOW        = 48
 COOLDOWN_BARS   = 4   # P1：出場後冷卻根數（B/ETH_B 用）
@@ -289,7 +291,7 @@ def _live_sync_position(portfolio):
         if portfolio.get("live_algo_id"):
             # 交易所止損單在輪詢間隔內觸發：以止損價完整記帳出場
             entry   = portfolio["entry_price"]
-            stop_px = round(entry * 0.985, 4)
+            stop_px = portfolio.get("live_stop_px") or round(entry * 0.985, 4)
             sell_value = json_qty * stop_px * (1 - COMMISSION)
             cost       = json_qty * entry * (1 + COMMISSION)
             pnl        = sell_value - cost
@@ -441,6 +443,12 @@ def get_entry_signal(df, latest):
 
     elif STRATEGY == "B":
         rsi = latest["rsi"]
+        # P3寬追蹤（2026-07-06晨會，walk-forward PASS）：+2%後啟動，峰值回落1%出場
+        if TRAIL_ARM_PCT > 0:
+            peak = max(portfolio.get("peak_price", entry_price), float(latest["high"]))
+            portfolio["peak_price"] = peak
+            if peak >= entry_price * (1 + TRAIL_ARM_PCT / 100) and price < peak * (1 - TRAIL_PCT / 100):
+                return f"追蹤停利（峰值{peak:.2f}回落{TRAIL_PCT:.1f}%）"
         # EMA48 趨勢過濾：確認上升趨勢，避免下跌趨勢接刀
         ema_s_now  = df["ema_s"].iloc[-2]
         ema_s_prev = df["ema_s"].iloc[-EMA_TREND_BARS]
@@ -486,6 +494,12 @@ def get_exit_reason(df, latest, portfolio):
 
     elif STRATEGY == "B":
         rsi = latest["rsi"]
+        # P3寬追蹤（2026-07-06晨會，walk-forward PASS）：+2%後啟動，峰值回落1%出場
+        if TRAIL_ARM_PCT > 0:
+            peak = max(portfolio.get("peak_price", entry_price), float(latest["high"]))
+            portfolio["peak_price"] = peak
+            if peak >= entry_price * (1 + TRAIL_ARM_PCT / 100) and price < peak * (1 - TRAIL_PCT / 100):
+                return f"追蹤停利（峰值{peak:.2f}回落{TRAIL_PCT:.1f}%）"
         if rsi > RSI_SELL:
             # 變體：未達最低獲利門檻則續抱，避免+0.5%小贏單被摩擦吃光
             if MIN_PROFIT_PCT > 0 and price < entry_price * (1 + MIN_PROFIT_PCT / 100):
@@ -568,6 +582,22 @@ def run():
         if reason:
             _execute_sell(df, latest, portfolio, price, bb_upper, bb_lower, reason, now_time)
             return
+        save_portfolio(portfolio)  # 保存 peak_price
+        # 實盤：追蹤啟動後把交易所止損單上移（毫秒級鎖利）
+        if LIVE_TRADE and TRAIL_ARM_PCT > 0:
+            entry = portfolio["entry_price"]
+            peak  = portfolio.get("peak_price", entry)
+            if peak >= entry * (1 + TRAIL_ARM_PCT / 100):
+                desired = round(max(entry * 0.985, peak * (1 - TRAIL_PCT / 100)), 2)
+                cur = portfolio.get("live_stop_px", round(entry * 0.985, 2))
+                if desired > cur * 1.001 and portfolio.get("live_algo_id"):
+                    _live_cancel_stop(portfolio["live_algo_id"])
+                    qty_now = _live_get_position_qty() or 0
+                    if qty_now > 0.0001:
+                        portfolio["live_algo_id"] = _live_place_stop(qty_now, desired)
+                        portfolio["live_stop_px"] = desired
+                        save_portfolio(portfolio)
+                        notify(f"🔒 [{STRAT_KEY}] 追蹤鎖利：止損上移至 ${desired:,.2f}（峰值 {peak:.2f}）")
 
     # ── 連敗熔斷（所有策略）───────────────────
     CIRCUIT_BREAKER = 3
@@ -653,9 +683,11 @@ def _execute_buy(df, latest, portfolio, price, bb_upper, bb_lower, recent_low,
         avail = _live_get_position_qty() or 0
         if avail > 0.0001:
             portfolio["live_algo_id"] = _live_place_stop(avail, round(price * 0.985, 2))
+            portfolio["live_stop_px"] = round(price * 0.985, 2)
 
     qty = portfolio["capital"] / price / (1 + COMMISSION)
     portfolio["position"]    = qty
+    portfolio["peak_price"]  = price
     portfolio["entry_price"] = price
     portfolio["entry_time"]  = str(latest.name)
     portfolio["capital"]     = 0.0
@@ -708,6 +740,8 @@ def _execute_sell(df, latest, portfolio, price, bb_upper, bb_lower, reason, now_
     portfolio["position"]        = 0.0
     portfolio["entry_price"]     = 0.0
     portfolio["entry_time"]      = ""
+    portfolio["peak_price"]      = 0.0
+    portfolio["live_stop_px"]    = 0.0
     portfolio["last_candle"]     = str(latest.name)
     portfolio["last_exit_candle"] = str(latest.name)  # P1：記錄出場K線供冷卻期用
     portfolio["total_trades"]   += 1
