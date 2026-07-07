@@ -445,12 +445,6 @@ def get_entry_signal(df, latest):
 
     elif STRATEGY == "B":
         rsi = latest["rsi"]
-        # P3寬追蹤（2026-07-06晨會，walk-forward PASS）：+2%後啟動，峰值回落1%出場
-        if TRAIL_ARM_PCT > 0:
-            peak = max(portfolio.get("peak_price", entry_price), float(latest["high"]))
-            portfolio["peak_price"] = peak
-            if peak >= entry_price * (1 + TRAIL_ARM_PCT / 100) and price < peak * (1 - TRAIL_PCT / 100):
-                return f"追蹤停利（峰值{peak:.2f}回落{TRAIL_PCT:.1f}%）"
         # EMA48 趨勢過濾：確認上升趨勢，避免下跌趨勢接刀
         ema_s_now  = df["ema_s"].iloc[-2]
         ema_s_prev = df["ema_s"].iloc[-EMA_TREND_BARS]
