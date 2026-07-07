@@ -1,13 +1,14 @@
 {
-  "capital": 978.3146510725368,
-  "position": 0.0,
-  "entry_price": 0.0,
-  "entry_time": "",
-  "last_candle": "2026-07-07 13:45:00+00:00",
+  "capital": 0.0,
+  "position": 13.745373806432614,
+  "entry_price": 71.103,
+  "entry_time": "2026-07-07 14:00:00+00:00",
+  "last_candle": "2026-07-07 14:00:00+00:00",
   "total_trades": 5,
   "wins": 2,
   "losses": 3,
   "total_pnl": -21.68534892746345,
   "last_exit_candle": "2026-07-07 06:45:00+00:00",
-  "consecutive_losses": 0
+  "consecutive_losses": 0,
+  "peak_price": 71.103
 }
