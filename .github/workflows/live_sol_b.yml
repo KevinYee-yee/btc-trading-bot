@@ -40,6 +40,7 @@ jobs:
           RSI_SELL:         "70"
           TRAIL_ARM_PCT:    "2.0"
           TRAIL_PCT:        "1.0"
+          STOP_COOLDOWN_BARS: "16"
           LIVE_TRADE:       "true"
           LIVE_CAPITAL:     ${{ vars.LIVE_CAPITAL_SOL_B || '45' }}
           OKX_API_KEY:      ${{ secrets.OKX_API_KEY }}

@@ -35,6 +35,7 @@ RSI_SELL        = float(os.environ.get("RSI_SELL", "62"))
 MIN_PROFIT_PCT  = float(os.environ.get("MIN_PROFIT_PCT", "0"))  # B策略RSI出場最低獲利門檻（A/B測試用）
 TRAIL_ARM_PCT   = float(os.environ.get("TRAIL_ARM_PCT", "0"))    # P3寬追蹤：浮盈達此%後啟動（0=關閉）
 TRAIL_PCT       = float(os.environ.get("TRAIL_PCT", "1.0"))      # P3寬追蹤：峰值回落%出場
+STOP_COOLDOWN_BARS = int(os.environ.get("STOP_COOLDOWN_BARS", "4"))  # K1非對稱冷卻：止損後冷卻根數（預設同一般）
 EMA_FAST        = 13
 EMA_SLOW        = 48
 COOLDOWN_BARS   = 4   # P1：出場後冷卻根數（B/ETH_B 用）
@@ -306,6 +307,7 @@ def _live_sync_position(portfolio):
             portfolio["total_pnl"]         += pnl
             portfolio["consecutive_losses"] = portfolio.get("consecutive_losses", 0) + 1
             portfolio["live_algo_id"]       = ""
+            portfolio["last_exit_was_stop"] = True
             _risk_check_after_sell(portfolio, pnl_pct)
             log_trade("SELL", stop_px, json_qty, pnl_pct, "交易所止損觸發", portfolio)
             save_portfolio(portfolio)
@@ -635,8 +637,9 @@ def run():
                 last_ts    = pd.Timestamp(last_exit)
                 current_ts = pd.Timestamp(candle_time)
                 bars_since = int((current_ts - last_ts).total_seconds() / (15 * 60))
-                if bars_since < COOLDOWN_BARS:
-                    print(f"  ⏸ 冷卻期中（距上次出場 {bars_since}/{COOLDOWN_BARS} 根K棒）")
+                need_bars = STOP_COOLDOWN_BARS if portfolio.get("last_exit_was_stop") else COOLDOWN_BARS
+                if bars_since < need_bars:
+                    print(f"  ⏸ 冷卻期中（距上次出場 {bars_since}/{need_bars} 根K棒{'，止損後延長' if portfolio.get('last_exit_was_stop') else ''}）")
                     in_cooldown = True
             except Exception:
                 pass
@@ -746,6 +749,7 @@ def _execute_sell(df, latest, portfolio, price, bb_upper, bb_lower, reason, now_
     portfolio["last_exit_candle"] = str(latest.name)  # P1：記錄出場K線供冷卻期用
     portfolio["total_trades"]   += 1
     portfolio["total_pnl"]      += pnl
+    portfolio["last_exit_was_stop"] = ("停損" in reason) or ("止損" in reason)
     if pnl > 0:
         portfolio["wins"]             += 1
         portfolio["consecutive_losses"] = 0
