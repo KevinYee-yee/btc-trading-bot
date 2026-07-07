@@ -3,7 +3,7 @@
   "position": 12.12698066818541,
   "entry_price": 81.25,
   "entry_time": "2026-07-07 18:45:00+00:00",
-  "last_candle": "2026-07-07 19:30:00+00:00",
+  "last_candle": "2026-07-07 19:45:00+00:00",
   "total_trades": 15,
   "wins": 9,
   "losses": 6,
@@ -23,5 +23,5 @@
   "day_pnl": -0.934,
   "peak_capital": 1003.2820373055933,
   "live_stop_px": 80.03,
-  "peak_price": 81.49
+  "peak_price": 81.58
 }
