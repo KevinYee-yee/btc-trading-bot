@@ -62,6 +62,7 @@ STRATEGY_LABEL = {
 }
 if VARIANT:
     STRATEGY_LABEL.setdefault(STRAT_KEY, f"{ASSET} 策略{STRATEGY}·{VARIANT}變體")
+STRATEGY_LABEL.setdefault(STRAT_KEY, f"{ASSET} 策略{STRATEGY}")
 
 FORCE_TEST = os.environ.get("FORCE_TEST", "")
 TG_TOKEN   = os.environ.get("TELEGRAM_TOKEN", "")
@@ -758,9 +759,10 @@ def _execute_sell(df, latest, portfolio, price, bb_upper, bb_lower, reason, now_
                  "reason":reason,"portfolio":portfolio,"bb_upper":str(bb_upper),"bb_lower":str(bb_lower)})
     icon = "🟢" if pnl > 0 else "🔴"
     live_tag = " 【實盤】" if LIVE_TRADE else ""
+    shown_pnl = pnl_pct / 100 * LIVE_CAPITAL if LIVE_TRADE else pnl
     notify(f"{icon}{live_tag} 出場｜{STRATEGY_LABEL.get(STRAT_KEY)}\n"
            f"進場：${entry_price:,.2f} → 出場：${price:,.2f}\n"
-           f"損益：{pnl_pct:+.2f}%（{pnl:+.2f} USDT）\n"
+           f"損益：{pnl_pct:+.2f}%（{shown_pnl:+.2f} USDT{'，實盤' if LIVE_TRADE else '，模擬'}）\n"
            f"原因：{reason}")
     print(f"  {icon} 賣出 @ ${price:,.2f}  損益：{pnl_pct:+.2f}%  原因：{reason}")
 
