@@ -1,0 +1,58 @@
+name: HYPE 趨勢腿T1（紙上）
+
+on:
+  schedule:
+    - cron: "7,37 * * * *"
+  workflow_dispatch:
+    inputs:
+      force_test:
+        description: '強制測試 (buy / sell / 留空)'
+        required: false
+        default: ''
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install ccxt pandas numpy
+
+      - name: Run HYPE Trend Leg T1 (paper)
+        env:
+          STRATEGY:         T
+          SYMBOL:           HYPE/USDT
+          TIMEFRAME:        4h
+          EMA_FAST:         "20"
+          EMA_SLOW:         "50"
+          PAPER_GATE:       "true"
+          GATE_ADX_MIN:     "0"
+          TELEGRAM_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GS_WEBHOOK:       ${{ secrets.GS_WEBHOOK }}
+          FORCE_TEST:       ${{ github.event.inputs.force_test }}
+        run: python monitor.py
+
+      - name: Commit portfolio state
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add paper_portfolio_hype_t.json 2>/dev/null || true
+          git add paper_trade_log_hype_t.csv 2>/dev/null || true
+          git diff --cached --quiet || git commit -m "📈HYPE-T1 $(date -u '+%Y-%m-%d %H:%M UTC') 更新"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main || true
+            if git push; then exit 0; fi
+            sleep $((RANDOM % 8 + 2))
+          done
+          echo "::warning::推送重試5次失敗（下輪自動補）"
+          exit 1
