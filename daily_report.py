@@ -24,7 +24,6 @@ ACTIVE = {
     "SOL_B":    ("paper_portfolio_sol_b.json",    "主力策略"),
     "SOL_B_V2": ("paper_portfolio_sol_b_v2.json", "A/B變體(+1%出場門檻)"),
     "SOL_B_V3": ("paper_portfolio_sol_b_v3.json", "A/B變體(RSI70出場·回測+14.4%)"),
-    "HYPE_B":   ("paper_portfolio_hype_b.json",     "新標的驗證(體質全過)"),
     "HYPE_T":   ("paper_portfolio_hype_t.json",     "趨勢腿T1(4H EMA20/50·回測+79%)"),
     "A":        ("paper_portfolio.json",           "BTC觀察中"),
     "ETH_B":    ("paper_portfolio_eth_b.json",     "熔斷待修"),
