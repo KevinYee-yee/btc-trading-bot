@@ -1,2 +1,3 @@
 time,action,price,qty_btc,pnl_pct,capital_after,reason
 2026-07-09 10:53,BUY,1752.68,0.540181,,0.00,策略訊號進場
+2026-07-09 17:54,SELL,1749.68,0.540181,-0.37%,944.20,RSI(9)>62超買出場
