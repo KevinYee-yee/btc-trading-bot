@@ -240,6 +240,10 @@ def _live_maker_buy(qty, ref_price):
             if float(o.get("filled") or 0) > 0.0001:
                 return o  # 部分成交也接受
             print(f"  🔁 maker 第{attempt+1}輪未成交（掛 ${bid:,.2f}），追價重掛")
+        # 薄冊市場備援（ZEC類）：maker 3輪失敗改吃市價（趨勢腿回測本以收盤價成交，價差窄時成本可忽略）
+        if os.environ.get("MAKER_FALLBACK_TAKER", "").lower() == "true":
+            print("  ⚡ maker 3輪未成交，改用市價單進場（薄冊備援）")
+            return _live_place_order("buy", qty)
         print("  ℹ️ maker 3輪未成交，本次進場放棄（訊號若持續下根K線再試）")
         return None
     except Exception as e:
