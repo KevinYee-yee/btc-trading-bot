@@ -38,6 +38,7 @@ jobs:
           PAPER_GATE:       "true"
           GATE_ADX_MIN:     "0"
           STOP_PCT:         "8"
+          MAKER_FALLBACK_TAKER: "true"
           LIVE_TRADE:       "true"
           LIVE_CAPITAL:     ${{ vars.LIVE_CAPITAL_ZEC || '45' }}
           OKX_API_KEY:      ${{ secrets.OKX_API_KEY }}
