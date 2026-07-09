@@ -9,7 +9,7 @@
   "losses": 9,
   "total_pnl": 56.575357812167226,
   "last_exit_candle": "2026-07-08 01:15:00+00:00",
-  "consecutive_losses": 3,
+  "consecutive_losses": 2,
   "peak_price": 0.0,
   "live_stop_px": 0.0,
   "last_exit_was_stop": true

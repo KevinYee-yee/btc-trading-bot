@@ -610,8 +610,18 @@ def run():
                         save_portfolio(portfolio)
                         notify(f"🔒 [{STRAT_KEY}] 追蹤鎖利：止損上移至 ${desired:,.2f}（峰值 {peak:.2f}）")
 
-    # ── 連敗熔斷（所有策略）───────────────────
+    # ── 連敗熔斷（所有策略）：48小時自動解凍（修死鎖：解除需贏單但熔斷中無法進場）──
     CIRCUIT_BREAKER = 3
+    if portfolio.get("consecutive_losses", 0) >= CIRCUIT_BREAKER:
+        last_exit = portfolio.get("last_exit_candle", "")
+        if last_exit:
+            try:
+                hours_since = (pd.Timestamp(candle_time) - pd.Timestamp(last_exit)).total_seconds() / 3600
+                if hours_since >= 48:
+                    portfolio["consecutive_losses"] = CIRCUIT_BREAKER - 1  # 解凍，再連敗1次即重新熔斷
+                    print(f"  🔓 熔斷滿48小時自動解凍（距上次出場 {hours_since:.0f}h）")
+            except Exception:
+                pass
     if portfolio.get("consecutive_losses", 0) >= CIRCUIT_BREAKER:
         print(f"  🚫 熔斷中（連敗 {portfolio['consecutive_losses']} 次）跳過進場")
         save_portfolio(portfolio)

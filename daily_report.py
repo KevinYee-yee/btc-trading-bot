@@ -162,6 +162,52 @@ def weather_lines():
     return out
 
 
+def _hype_trigger_info():
+    """HYPE趨勢腿：現價 vs 4H EMA20進場線"""
+    try:
+        req = urllib.request.Request(
+            "https://www.okx.com/api/v5/market/candles?instId=HYPE-USDT&bar=4H&limit=100",
+            headers={"User-Agent": "Mozilla/5.0"})
+        d = json.load(urllib.request.urlopen(req, timeout=15))["data"]; d.reverse()
+        closes = [float(x[4]) for x in d]
+        e20 = _ema_last(closes, 20); px = closes[-1]
+        return px, e20
+    except Exception:
+        return None, None
+
+
+def chair_lines():
+    """例會主席判讀（規則式）"""
+    out = ["", "━━ 🪑 例會判讀 ━━"]
+    try:
+        # HYPE 埋伏狀態
+        px, e20 = _hype_trigger_info()
+        hy = load("live_portfolio_hype_t.json")
+        if hy and hy.get("position", 0) > 0:
+            out.append(f"HYPE腿：持倉@{hy['entry_price']:.2f}，現價{px:.2f}（{(px/hy['entry_price']-1)*100:+.1f}%），出場=4H跌破EMA50")
+        elif px and e20:
+            gap = (e20 / px - 1) * 100
+            out.append(f"HYPE腿埋伏中：現價{px:.2f}，進場線(4H EMA20){e20:.2f}" +
+                       (f"，還差{gap:.1f}%" if gap > 0 else "，已站上→等4H收盤確認"))
+        # SOL 重啟距離
+        rows = _okx_daily("SOL-USDT", 5)
+        sol_px = rows[-1][2]
+        out.append(f"SOL腿停用：現價{sol_px:.2f}，重啟線84（差{(84/sol_px-1)*100:+.1f}%）")
+        # 熔斷普查
+        frozen = []
+        for k, (f, _) in ACTIVE.items():
+            p = load(f)
+            if p and p.get("consecutive_losses", 0) >= 3:
+                frozen.append(k)
+        if frozen:
+            out.append("⚠️ 熔斷中：" + "、".join(frozen) + "（48h自動解凍）")
+        # 需人工介入？
+        out.append("→ 系統自主運作中，無需人工介入" if not frozen else "→ 觀察解凍後表現")
+    except Exception as e:
+        out.append(f"（判讀資料取得失敗：{e}）")
+    return out
+
+
 def main():
     print(sh(["git", "pull"]))
     now = datetime.now(TPE)
@@ -196,6 +242,9 @@ def main():
     sol_b2 = load("paper_portfolio_sol_b_v2.json")
     for a in build_actions(live, sol_b, sol_b2):
         lines.append(f"• {a}")
+
+    for c in chair_lines():
+        lines.append(c)
 
     msg = "\n".join(lines)
     print(msg)
