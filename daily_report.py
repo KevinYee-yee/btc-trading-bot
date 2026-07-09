@@ -162,11 +162,11 @@ def weather_lines():
     return out
 
 
-def _hype_trigger_info():
-    """HYPE趨勢腿：現價 vs 4H EMA20進場線"""
+def _trend_trigger_info(inst):
+    """趨勢腿：現價 vs 4H EMA20進場線"""
     try:
         req = urllib.request.Request(
-            "https://www.okx.com/api/v5/market/candles?instId=HYPE-USDT&bar=4H&limit=100",
+            f"https://www.okx.com/api/v5/market/candles?instId={inst}&bar=4H&limit=100",
             headers={"User-Agent": "Mozilla/5.0"})
         d = json.load(urllib.request.urlopen(req, timeout=15))["data"]; d.reverse()
         closes = [float(x[4]) for x in d]
@@ -180,15 +180,17 @@ def chair_lines():
     """例會主席判讀（規則式）"""
     out = ["", "━━ 🪑 例會判讀 ━━"]
     try:
-        # HYPE 埋伏狀態
-        px, e20 = _hype_trigger_info()
-        hy = load("live_portfolio_hype_t.json")
-        if hy and hy.get("position", 0) > 0:
-            out.append(f"HYPE腿：持倉@{hy['entry_price']:.2f}，現價{px:.2f}（{(px/hy['entry_price']-1)*100:+.1f}%），出場=4H跌破EMA50")
-        elif px and e20:
-            gap = (e20 / px - 1) * 100
-            out.append(f"HYPE腿埋伏中：現價{px:.2f}，進場線(4H EMA20){e20:.2f}" +
-                       (f"，還差{gap:.1f}%" if gap > 0 else "，已站上→等4H收盤確認"))
+        # 趨勢腿埋伏狀態（通用）
+        for name, inst, pf in (("HYPE", "HYPE-USDT", "live_portfolio_hype_t.json"),
+                               ("ZEC",  "ZEC-USDT",  "live_portfolio_zec_t.json")):
+            px, e20 = _trend_trigger_info(inst)
+            lp = load(pf)
+            if lp and lp.get("position", 0) > 0:
+                out.append(f"{name}腿：持倉@{lp['entry_price']:.2f}，現價{px:.2f}（{(px/lp['entry_price']-1)*100:+.1f}%），出場=4H跌破EMA50")
+            elif px and e20:
+                gap = (e20 / px - 1) * 100
+                out.append(f"{name}腿埋伏中：現價{px:.2f}，進場線{e20:.2f}" +
+                           (f"，還差{gap:.1f}%" if gap > 0 else "，已站上→等4H收盤確認"))
         # SOL 重啟距離
         rows = _okx_daily("SOL-USDT", 5)
         sol_px = rows[-1][2]

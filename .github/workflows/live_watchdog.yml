@@ -9,7 +9,7 @@ jobs:
   watchdog:
     runs-on: ubuntu-latest
     # 只在實盤開啟時監控
-    if: ${{ vars.LIVE_SOL_B == 'on' || vars.LIVE_HYPE_T1 == 'on' }}
+    if: ${{ vars.LIVE_SOL_B == 'on' || vars.LIVE_HYPE_T1 == 'on' || vars.LIVE_ZEC_T1 == 'on' }}
 
     steps:
       - uses: actions/checkout@v4
