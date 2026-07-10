@@ -20,14 +20,7 @@ LIVE_CAPITAL = 45.0
 LIVE_START   = datetime(2026, 7, 2, tzinfo=TPE)   # 實盤上線日
 
 # 現役策略（已退役者不顯示）
-ACTIVE = {
-    "SOL_B":    ("paper_portfolio_sol_b.json",    "主力策略"),
-    "SOL_B_V2": ("paper_portfolio_sol_b_v2.json", "A/B變體(+1%出場門檻)"),
-    "SOL_B_V3": ("paper_portfolio_sol_b_v3.json", "A/B變體(RSI70出場·回測+14.4%)"),
-    "HYPE_T":   ("paper_portfolio_hype_t.json",     "趨勢腿T1(4H EMA20/50·回測+79%)"),
-    "A":        ("paper_portfolio.json",           "BTC觀察中"),
-    "ETH_B":    ("paper_portfolio_eth_b.json",     "熔斷待修"),
-}
+ACTIVE = {}  # 紙上策略已全數退役（2026-07-10 Kevin決策：統一用回測評估）
 
 
 def sh(cmd):
@@ -229,19 +222,13 @@ def main():
     else:
         lines.append("（無實盤資料）")
 
-    lines.append("")
-    lines.append("━━ 🧪 紙上驗證 ━━")
-    for key, (fname, note) in ACTIVE.items():
-        lines.append(fmt_paper(key, fname, note))
 
     for w in weather_lines():
         lines.append(w)
 
     lines.append("")
     lines.append("━━ ✅ 行動追蹤 ━━")
-    sol_b  = load("paper_portfolio_sol_b.json")
-    sol_b2 = load("paper_portfolio_sol_b_v2.json")
-    for a in build_actions(live, sol_b, sol_b2):
+    for a in build_actions(live, None, None):
         lines.append(f"• {a}")
 
     for c in chair_lines():
