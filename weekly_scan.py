@@ -6,7 +6,7 @@ import json, time, hmac, hashlib, urllib.request, urllib.parse
 
 TG_TOKEN   = "8731884089:AAEYJc7S6YoUuNeGjlbSjI5TpNvleQNqnyM"
 TG_CHAT_ID = "7898079577"
-DAYS = 90
+DAYS = 150  # 2026-07-10修正：原90天「往回抓」會系統性避開近期最差區間（AAVE驗證發現），改長窗口+分段判定
 FRICTION = 0.0025
 
 def http(url):
@@ -93,7 +93,7 @@ def bt_t1(k4h, k1d):
         prev_day = time.strftime("%Y-%m-%d", time.gmtime((ts-86400000)/1000))
         if dmap.get(prev_day) and c > e20[i]:
             pos = 1; entry = c
-    return summarize(trades, cap, peak_dd, k4h)
+    return trades, k4h
 
 def bt_rev(k15, k1d=None):
     """回歸腿:RSI9<40+EMA48升+50根支撐;RSI>70出/-1.5%停/-5%強停;K1冷卻"""
@@ -117,19 +117,47 @@ def bt_rev(k15, k1d=None):
         r = rsi[i]
         if r and r < 40 and e48[i] > e48[i-48] and c[i] > min(lows[i-50:i]):
             pos = 1; entry = c[i]
-    return summarize(trades, cap, peak_dd, k15)
+    return trades, k15
 
-def summarize(trades, cap, mdd, klines):
-    cutoff = klines[-1][0] - 30*86400000
-    d30 = 1.0
-    for ts, pnl in trades:
-        if ts >= cutoff: d30 *= 1+pnl
-    wins = sum(1 for _, p in trades if p > 0)
-    return {"ret": (cap-1)*100, "d30": (d30-1)*100, "mdd": mdd*100,
-            "n": len(trades), "wr": wins/len(trades)*100 if trades else 0}
+def summarize(trades, klines, warmup_days=30, window_days=15):
+    """Walk-forward式判定：固定歷史起點，切連續不重疊窗口逐段檢驗，
+    避免「往回抓固定天數」系統性避開近期最差區間的偏誤（2026-07-10 AAVE驗證發現）"""
+    if not klines:
+        return {"ret":0,"d30":0,"mdd":0,"n":0,"wr":0,"win_rate_windows":0,"pass":False}
+    t0 = klines[0][0] + warmup_days*86400000
+    t_end = klines[-1][0]
+    win_ms = window_days*86400000
+
+    def equity_over(t_from, t_to):
+        cap, peak, mdd, n, wins = 1.0, 1.0, 0.0, 0, 0
+        for ts, pnl in trades:
+            if t_from <= ts < t_to:
+                cap *= 1+pnl; n += 1; wins += pnl>0
+                peak = max(peak, cap); mdd = min(mdd, cap/peak-1)
+        return cap, mdd, n, wins
+
+    # 全期（暖身後）
+    full_cap, full_mdd, full_n, full_wins = equity_over(t0, t_end+1)
+
+    # 分段
+    windows, t = [], t0
+    while t < t_end:
+        cap, mdd, n, wins = equity_over(t, min(t+win_ms, t_end+1))
+        windows.append((cap-1)*100)
+        t += win_ms
+    win_rate = sum(1 for w in windows if w >= 0) / len(windows) * 100 if windows else 0
+
+    cutoff = t_end - 30*86400000
+    d30_cap, _, d30_n, _ = equity_over(cutoff, t_end+1)
+
+    ret = (full_cap-1)*100
+    ok = (ret > 0) and (win_rate >= 60) and (full_mdd > -0.25) and ((d30_cap-1)*100 >= 0) and (full_n >= 8)
+    return {"ret": ret, "d30": (d30_cap-1)*100, "mdd": full_mdd*100,
+            "n": full_n, "wr": full_wins/max(full_n,1)*100,
+            "win_rate_windows": win_rate, "pass": ok}
 
 def passes(s):
-    return s["ret"] > 5 and s["d30"] >= 0 and s["mdd"] > -25 and s["n"] >= 8
+    return s.get("pass", False)
 
 # ── 主流程 ────────────────────────────────
 def scan():
@@ -139,8 +167,8 @@ def scan():
             k4h = okx_klines(inst, "4H", DAYS*6)
             k1d = okx_klines(inst, "1D", DAYS+60)
             k15 = okx_klines(inst, "15m", DAYS*96)
-            for leg, s in (("T1", bt_t1(k4h, k1d)), ("回歸", bt_rev(k15))):
-                results.append({"ex": "OKX", "sym": inst.replace("-USDT",""), "leg": leg, **s})
+            for leg, (trades, kl) in (("T1", bt_t1(k4h, k1d)), ("回歸", bt_rev(k15))):
+                results.append({"ex": "OKX", "sym": inst.replace("-USDT",""), "leg": leg, **summarize(trades, kl)})
         except Exception as e:
             print(inst, "err", e)
     for sym in bn_top():
@@ -148,8 +176,8 @@ def scan():
             k4h = bn_klines(sym, "4h", DAYS*6)
             k1d = bn_klines(sym, "1d", DAYS+60)
             k15 = bn_klines(sym, "15m", DAYS*96)
-            for leg, s in (("T1", bt_t1(k4h, k1d)), ("回歸", bt_rev(k15))):
-                results.append({"ex": "幣安", "sym": sym.replace("USDT",""), "leg": leg, **s})
+            for leg, (trades, kl) in (("T1", bt_t1(k4h, k1d)), ("回歸", bt_rev(k15))):
+                results.append({"ex": "幣安", "sym": sym.replace("USDT",""), "leg": leg, **summarize(trades, kl)})
         except Exception as e:
             print(sym, "err", e)
     return results
