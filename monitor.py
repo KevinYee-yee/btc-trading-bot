@@ -247,8 +247,20 @@ def _live_maker_buy(qty, ref_price):
         print("  ℹ️ maker 3輪未成交，本次進場放棄（訊號若持續下根K線再試）")
         return None
     except Exception as e:
+        print(f"  🚨 maker買入失敗：{e}")
         notify(f"🚨 [{STRAT_KEY}] maker買入失敗：{e}")
         return None
+
+def _live_cancel_all_stops():
+    """備援：algo_id遺失（如帳本重建）時，撤銷本幣種所有待觸發止損單，避免出場後殘留"""
+    try:
+        r = live_exchange.private_get_trade_orders_algo_pending({"ordType": "conditional"})
+        for od in r.get("data", []):
+            if od.get("instId") == SYMBOL.replace("/", "-"):
+                _live_cancel_stop(od["algoId"])
+                print(f"  🧹 撤銷殘留止損單 {od['algoId'][:10]}…")
+    except Exception as e:
+        print(f"  ⚠️ 掃描殘留止損單失敗：{e}")
 
 def _live_place_stop(qty, stop_price):
     """買入後在交易所掛止損市價單（毫秒級觸發，消滅停損穿透）；失敗則退回機器人10分鐘輪詢停損"""
@@ -743,6 +755,8 @@ def _execute_sell(df, latest, portfolio, price, bb_upper, bb_lower, reason, now_
         if portfolio.get("live_algo_id"):
             _live_cancel_stop(portfolio["live_algo_id"])
             portfolio["live_algo_id"] = ""
+        elif portfolio.get("live_stop_px"):
+            _live_cancel_all_stops()  # algo_id遺失時的備援撤單
         live_qty = _live_get_position_qty()
         if live_qty is None:
             print("  ❌ 無法取得持倉，保留狀態待下次重試")

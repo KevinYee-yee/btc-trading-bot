@@ -63,7 +63,7 @@ jobs:
           git diff --cached --quiet || git commit -m "🔴LIVE SOL-B $(date -u '+%Y-%m-%d %H:%M UTC')"
           # 多 workflow 同時推送易撞車：重試 5 次 + 隨機退避
           for i in 1 2 3 4 5; do
-            git pull --rebase origin main || true
+            git pull --rebase -X theirs origin main || { git rebase --abort 2>/dev/null || true; sleep 2; continue; }
             if git push; then exit 0; fi
             sleep $((RANDOM % 8 + 2))
           done
@@ -76,3 +76,10 @@ jobs:
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
             -d text="🚨【實盤】SOL_B 交易程式執行失敗！請查看 GitHub Actions：https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      - name: 狀態保存失敗告警
+        if: failure() && steps.trade.outcome == 'success'
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="⚠️【實盤】交易已執行但帳本保存失敗！帳本可能與交易所脫鉤，請通知Claude核對。run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"

@@ -29,6 +29,7 @@ jobs:
       - run: pip install ccxt pandas numpy
 
       - name: Run HYPE Trend Leg T1 (LIVE)
+        id: trade
         env:
           STRATEGY:         T
           SYMBOL:           HYPE/USDT
@@ -60,9 +61,16 @@ jobs:
           git add live_trade_log_hype_t.csv 2>/dev/null || true
           git diff --cached --quiet || git commit -m "🔴LIVE HYPE-T1 $(date -u '+%Y-%m-%d %H:%M UTC') 更新"
           for i in 1 2 3 4 5; do
-            git pull --rebase origin main || true
+            git pull --rebase -X theirs origin main || { git rebase --abort 2>/dev/null || true; sleep 2; continue; }
             if git push; then exit 0; fi
             sleep $((RANDOM % 8 + 2))
           done
           echo "::warning::推送重試5次失敗（下輪自動補）"
           exit 1
+
+      - name: 狀態保存失敗告警
+        if: failure() && steps.trade.outcome == 'success'
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="⚠️【實盤】交易已執行但帳本保存失敗！帳本可能與交易所脫鉤，請通知Claude核對。run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
