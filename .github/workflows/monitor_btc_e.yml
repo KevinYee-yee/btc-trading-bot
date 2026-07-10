@@ -45,7 +45,7 @@ jobs:
           git add trade_log_btc_e.csv 2>/dev/null || true
           git diff --cached --quiet || git commit -m "📊BTC-E $(date -u '+%Y-%m-%d') 日線更新"
           for i in 1 2 3 4 5; do
-            git pull --rebase origin main || true
+            git pull --rebase -X theirs origin main || { git rebase --abort 2>/dev/null || true; sleep 2; continue; }
             if git push; then exit 0; fi
             sleep $((RANDOM % 8 + 2))
           done

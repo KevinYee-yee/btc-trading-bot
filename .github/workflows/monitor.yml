@@ -50,7 +50,7 @@ jobs:
           git add paper_trade_log.csv 2>/dev/null || true
           git diff --cached --quiet || git commit -m "📊 $(date -u '+%Y-%m-%d %H:%M UTC') 自動更新帳戶狀態"
           for i in 1 2 3 4 5; do
-            git pull --rebase origin main || true
+            git pull --rebase -X theirs origin main || { git rebase --abort 2>/dev/null || true; sleep 2; continue; }
             if git push; then exit 0; fi
             sleep $((RANDOM % 8 + 2))
           done
