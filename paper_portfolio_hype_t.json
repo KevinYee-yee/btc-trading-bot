@@ -1,13 +1,14 @@
 {
-  "capital": 1000.0,
-  "position": 0.0,
-  "entry_price": 0.0,
-  "entry_time": "",
-  "last_candle": "2026-07-09 20:00:00+00:00",
+  "capital": 0.0,
+  "position": 14.591624780921347,
+  "entry_price": 68.464,
+  "entry_time": "2026-07-10 00:00:00+00:00",
+  "last_candle": "2026-07-10 00:00:00+00:00",
   "total_trades": 0,
   "wins": 0,
   "losses": 0,
   "total_pnl": 0.0,
   "last_exit_candle": "",
-  "consecutive_losses": 0
+  "consecutive_losses": 0,
+  "peak_price": 68.464
 }
