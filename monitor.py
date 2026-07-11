@@ -706,6 +706,14 @@ def _execute_buy(df, latest, portfolio, price, bb_upper, bb_lower, recent_low,
                  now_time, reason, cond1, cond2):
     # 缺口1/2/3/4：實盤下單（先下單成功才更新 portfolio）
     if LIVE_TRADE:
+        # 重複買入硬性守門員（2026-07-11修復）：帳本可能因同步漏洞誤判空倉，
+        # 買入前一律直接問交易所真實餘額，不信任帳本的 position 欄位
+        real_qty = _live_get_position_qty()
+        if real_qty and real_qty * price > 5:  # 已有價值>$5的持倉，視為重複進場
+            notify(f"🚨 [{STRAT_KEY}] 偵測到已持有 {real_qty:.6f} {ASSET}（帳本卻顯示空倉）"
+                   f"，為防重複下單已攔截本次進場，請人工核對帳本與交易所")
+            print(f"  🚫 已持有 {real_qty:.6f} {ASSET}，攔截重複買入")
+            return
         if not _live_check_balance():
             print("  ❌ 餘額不足，取消本次進場")
             return
