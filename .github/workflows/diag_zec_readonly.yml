@@ -1,0 +1,63 @@
+name: 🔍 ZEC 唯讀診斷（不下單）
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install ccxt
+
+      - name: 唯讀查詢 OKX 真實狀態
+        env:
+          OKX_API_KEY:      ${{ secrets.OKX_API_KEY }}
+          OKX_SECRET:       ${{ secrets.OKX_SECRET }}
+          OKX_PASSPHRASE:   ${{ secrets.OKX_PASSPHRASE }}
+        run: |
+          python3 - <<'PYEOF'
+          import ccxt, os, json
+
+          ex = ccxt.okx({
+              "apiKey": os.environ["OKX_API_KEY"],
+              "secret": os.environ["OKX_SECRET"],
+              "password": os.environ["OKX_PASSPHRASE"],
+              "enableRateLimit": True,
+          })
+
+          print("=== 真實餘額（ZEC） ===")
+          bal = ex.fetch_balance()
+          zec = bal.get("ZEC", {})
+          print(f"free: {zec.get('free')}  used: {zec.get('used')}  total: {zec.get('total')}")
+
+          print("\n=== 待觸發止損單（策略委託） ===")
+          try:
+              r = ex.private_get_trade_orders_algo_pending({"ordType": "conditional"})
+              for o in r.get("data", []):
+                  if o.get("instId") == "ZEC-USDT":
+                      print(f"algoId={o['algoId']}  side={o['side']}  sz={o['sz']}  觸發價={o.get('slTriggerPx')}")
+          except Exception as e:
+              print("查詢失敗:", e)
+
+          print("\n=== 最近20筆 ZEC 成交紀錄 ===")
+          try:
+              trades = ex.fetch_my_trades("ZEC/USDT", limit=20)
+              for t in trades:
+                  print(f"{t['datetime']}  {t['side']:4}  {t['amount']:.6f} @ {t['price']:.2f}")
+          except Exception as e:
+              print("查詢失敗:", e)
+          PYEOF
+
+      - name: 結果發送 Telegram
+        if: always()
+        env:
+          TELEGRAM_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            -d text="🔍 ZEC唯讀診斷已完成，請查看 GitHub Actions log：https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
