@@ -1,0 +1,73 @@
+name: 🔧 ZEC 止損調整（手動觸發）
+
+on:
+  workflow_dispatch:
+    inputs:
+      new_stop_price:
+        description: '新止損觸發價（例如 505）'
+        required: true
+
+jobs:
+  move_stop:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install ccxt
+
+      - name: 撤舊止損 + 掛新止損
+        env:
+          OKX_API_KEY:      ${{ secrets.OKX_API_KEY }}
+          OKX_SECRET:       ${{ secrets.OKX_SECRET }}
+          OKX_PASSPHRASE:   ${{ secrets.OKX_PASSPHRASE }}
+          NEW_STOP:         ${{ github.event.inputs.new_stop_price }}
+        run: |
+          python3 - <<'PYEOF'
+          import ccxt, os
+          ex = ccxt.okx({
+              "apiKey": os.environ["OKX_API_KEY"],
+              "secret": os.environ["OKX_SECRET"],
+              "password": os.environ["OKX_PASSPHRASE"],
+              "enableRateLimit": True,
+          })
+          new_stop = float(os.environ["NEW_STOP"])
+
+          bal = ex.fetch_balance()
+          qty = float(bal.get("ZEC", {}).get("total", 0))
+          print(f"真實持有數量: {qty} ZEC")
+
+          r = ex.private_get_trade_orders_algo_pending({"ordType": "conditional"})
+          old_ids = [o["algoId"] for o in r.get("data", []) if o.get("instId") == "ZEC-USDT"]
+          for aid in old_ids:
+              ex.private_post_trade_cancel_algos([{"algoId": aid, "instId": "ZEC-USDT"}])
+              print(f"已撤銷舊止損 {aid}")
+
+          order = ex.create_order("ZEC/USDT", "market", "sell", qty, None, {"stopLossPrice": new_stop, "tdMode": "cash"})
+          print(f"✅ 新止損已掛：跌至 ${new_stop} 自動賣出（algoId={order.get('id')}）")
+          PYEOF
+
+      - name: 更新帳本記錄
+        run: |
+          python3 -c "
+          import json
+          p = json.load(open('live_portfolio_zec_t.json'))
+          p['live_stop_px'] = float('${{ github.event.inputs.new_stop_price }}')
+          json.dump(p, open('live_portfolio_zec_t.json','w'), indent=2)
+          "
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add live_portfolio_zec_t.json
+          git commit -m "chore: ZEC止損手動調整至 ${{ github.event.inputs.new_stop_price }}"
+          git pull --rebase -X theirs origin main || true
+          git push
+
+      - name: Telegram 通知
+        if: always()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="🔧 ZEC 止損已調整至 \$${{ github.event.inputs.new_stop_price }}"
