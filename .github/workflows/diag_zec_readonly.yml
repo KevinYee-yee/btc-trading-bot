@@ -29,10 +29,12 @@ jobs:
               "enableRateLimit": True,
           })
 
-          print("=== 真實餘額（ZEC） ===")
+          print("=== 真實餘額（ZEC + USDT） ===")
           bal = ex.fetch_balance()
           zec = bal.get("ZEC", {})
-          print(f"free: {zec.get('free')}  used: {zec.get('used')}  total: {zec.get('total')}")
+          usdt = bal.get("USDT", {})
+          print(f"ZEC  free: {zec.get('free')}  used: {zec.get('used')}  total: {zec.get('total')}")
+          print(f"USDT free: {usdt.get('free')}  used: {usdt.get('used')}  total: {usdt.get('total')}")
 
           print("\n=== 待觸發止損單（策略委託） ===")
           try:
