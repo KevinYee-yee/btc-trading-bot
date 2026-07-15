@@ -1,8 +1,8 @@
 {
-  "capital": 998.0019980019981,
-  "position": 0.0,
-  "entry_price": 0.0,
-  "entry_time": "",
+  "capital": 0.0,
+  "position": 15.198246844649228,
+  "entry_price": 65.6,
+  "entry_time": "2026-07-14 20:00:00+00:00",
   "last_candle": "2026-07-15 08:00:00+00:00",
   "total_trades": 1,
   "wins": 0,
