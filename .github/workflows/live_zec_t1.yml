@@ -1,8 +1,6 @@
 name: 🔴 ZEC 趨勢腿T1 實盤 OKX
 
 on:
-  schedule:
-    - cron: "1,11,21,31,41,51 * * * *"
   workflow_dispatch:
     inputs:
       force_test:

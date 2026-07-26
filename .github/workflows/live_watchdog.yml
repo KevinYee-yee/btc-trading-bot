@@ -1,8 +1,6 @@
 name: 🐕 實盤看門狗（排程停擺告警）
 
 on:
-  schedule:
-    - cron: "9,39 * * * *"
   workflow_dispatch:
 
 jobs:

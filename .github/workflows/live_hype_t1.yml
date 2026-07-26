@@ -1,8 +1,6 @@
 name: 🔴 HYPE 趨勢腿T1 實盤 OKX
 
 on:
-  schedule:
-    - cron: "5,15,25,35,45,55 * * * *"
   workflow_dispatch:
     inputs:
       force_test:

@@ -1,8 +1,6 @@
 name: 🔴 SOL_B 實盤交易 OKX
 
 on:
-  schedule:
-    - cron: "3,13,23,33,43,53 * * * *"
   workflow_dispatch:
     inputs:
       force_test:
