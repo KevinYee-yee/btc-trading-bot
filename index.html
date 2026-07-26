@@ -9,37 +9,50 @@
   --surface:#16161d; --card:#1e1e27; --card2:#24242f; --line:#32323e;
   --ink:#f2f2f5; --ink2:#a8a8b5; --ink3:#6c6c78;
   --s1:#3987e5; --s2:#199e70; --s3:#c98500;
-  --good:#1fbf83; --bad:#e66767; --warn:#c98500;
+  --good:#1fbf83; --bad:#e66767; --warn:#c98500; --off:#5f5f6b;
 }
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--surface);color:var(--ink);font-family:-apple-system,"PingFang TC","Noto Sans TC",sans-serif;padding:16px;max-width:1080px;margin:0 auto}
 h1{font-size:1.25rem;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-h2{font-size:.95rem;color:var(--ink2);margin:26px 0 10px;font-weight:600}
+h2{font-size:.95rem;color:var(--ink2);margin:26px 0 10px;font-weight:600;display:flex;align-items:center;gap:8px}
 .pill{font-size:.72rem;padding:3px 10px;border-radius:99px;border:1px solid var(--line);color:var(--ink2)}
 .pill.ok{color:var(--good);border-color:var(--good)}
 .pill.bad{color:var(--bad);border-color:var(--bad)}
-.sub{color:var(--ink3);font-size:.78rem;margin-top:6px}
+.pill.off{color:var(--off);border-color:var(--off)}
+.sub{color:var(--ink3);font-size:.78rem;margin-top:6px;line-height:1.5}
 .grid{display:grid;gap:12px}
+.hunters{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
 .tiles{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
 .tile{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
 .tile .k{font-size:.75rem;color:var(--ink2)}
 .tile .v{font-size:1.45rem;font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums}
 .tile .d{font-size:.72rem;color:var(--ink3);margin-top:4px}
 .pos{color:var(--good)} .neg{color:var(--bad)}
-.race{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
-.card .name{display:flex;align-items:center;gap:8px;font-weight:600;font-size:.9rem}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+.card.armed{border-color:var(--warn)}
+.card.holding{border-color:var(--s1)}
+.card.dormant{opacity:.55}
+.card .name{display:flex;align-items:center;justify-content:space-between;font-weight:700;font-size:1rem}
+.card .sym{display:flex;align-items:center;gap:8px}
 .dot{width:10px;height:10px;border-radius:50%;flex:none}
-.card .ret{font-size:1.6rem;font-weight:700;margin:6px 0 2px;font-variant-numeric:tabular-nums}
-.card .meta{font-size:.75rem;color:var(--ink2)}
-.lead{outline:2px solid var(--s2);outline-offset:1px}
+.card .ret{font-size:1.7rem;font-weight:700;margin:8px 0 2px;font-variant-numeric:tabular-nums}
+.card .meta{font-size:.78rem;color:var(--ink2);line-height:1.7}
+.card .meta b{color:var(--ink)}
+.badge{font-size:.68rem;padding:2px 8px;border-radius:99px;font-weight:600}
+.badge.holding{background:rgba(57,135,229,.18);color:var(--s1)}
+.badge.armed{background:rgba(201,133,0,.18);color:var(--warn)}
+.badge.dormant{background:rgba(95,95,107,.18);color:var(--off)}
 #chartwrap{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:.8rem;font-variant-numeric:tabular-nums}
 th{color:var(--ink3);font-weight:500;text-align:left;padding:7px 8px;border-bottom:1px solid var(--line)}
 td{padding:7px 8px;border-bottom:1px solid var(--card2);color:var(--ink2)}
 td:first-child{color:var(--ink3)}
 .tag{font-size:.7rem;padding:1px 7px;border-radius:99px;background:var(--card2)}
-footer{color:var(--ink3);font-size:.72rem;margin:26px 0 8px;text-align:center}
+.scan-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-top:1px solid var(--line);font-size:.85rem}
+.scan-row:first-child{border-top:none}
+.scan-name{color:var(--ink)}
+.scan-meta{color:var(--ink3);font-size:.75rem}
+footer{color:var(--ink3);font-size:.72rem;margin:26px 0 8px;text-align:center;line-height:1.6}
 </style>
 </head>
 <body>
@@ -47,40 +60,51 @@ footer{color:var(--ink3);font-size:.72rem;margin:26px 0 8px;text-align:center}
   <span class="pill" id="hb">排程檢查中…</span>
   <span class="pill" id="upd">載入中…</span>
 </h1>
-<div class="sub">資料直讀 GitHub（每次交易後自動更新）・每 5 分鐘自動重新整理</div>
+<div class="sub">資料直讀 GitHub（每次交易後自動更新）・每 5 分鐘自動重新整理・策略評估已全面改用回測（週掃描 + walk-forward），不再依賴紙上試跑</div>
 
-<h2>💰 實盤 SOL_B（本金 $45 USDT）</h2>
-<div class="grid tiles" id="live-tiles"></div>
+<h2>🏹 實盤獵人（三腿，各 $45 本金）</h2>
+<div class="grid hunters" id="hunters"></div>
 
-<h2>🏁 出場規則 A/B 賽場（紙上・虛擬 $1000・同訊號源）</h2>
-<div class="grid race" id="race"></div>
-<div class="sub" style="margin:8px 0 10px">判定規則：滿 40 筆或報酬差 ±3% 先到者為準；勝者先以 50% 資金切換實盤驗證</div>
-<div id="chartwrap">
-  <div style="font-size:.8rem;color:var(--ink2);margin-bottom:8px">資金曲線（虛擬 $1000 起）<span id="chart-note" style="color:var(--ink3)"></span></div>
-  <svg id="equity-chart" width="1000" height="260" role="img" aria-label="三版本資金曲線"></svg>
-</div>
-
-<h2>👀 其他觀察倉</h2>
-<div class="grid race" id="others"></div>
-
-<h2>📜 最近實盤交易</h2>
+<h2>📜 最近實盤交易（合併三腿）</h2>
 <div class="card" style="overflow-x:auto"><table id="trades"><thead>
-<tr><th>時間(台灣)</th><th>動作</th><th>價格</th><th>損益%</th><th>真實損益</th><th>原因</th></tr>
+<tr><th>標的</th><th>時間(台灣)</th><th>動作</th><th>價格</th><th>損益%</th><th>真實損益</th><th>原因</th></tr>
 </thead><tbody></tbody></table></div>
 
-<footer>btc-trading-bot・原版=RSI62出場｜V2=62且獲利≥1%｜V3=RSI70出場</footer>
+<h2>📄 紙上做空鏡像（HYPE/ZEC，虛擬 $1000 起）</h2>
+<div class="sub" style="margin-top:0">情境閘門與實盤趨勢腿互為鏡像：日線跌破 EMA50 才放行找空點・4H EMA20 下破進場・漲破 EMA50 或 +8% 覆蓋</div>
+<div class="grid hunters" id="papershorts"></div>
+<div class="card" style="overflow-x:auto;margin-top:12px"><table id="paper-trades"><thead>
+<tr><th>標的</th><th>時間(台灣)</th><th>動作</th><th>價格</th><th>損益%</th><th>原因</th></tr>
+</thead><tbody></tbody></table></div>
+
+<h2>📡 週掃描（雙獵場，判準固定）</h2>
+<div class="card" id="scan-card">
+  <div class="sub" id="scan-updated" style="margin-top:0">尚未讀到掃描結果</div>
+  <div id="scan-list"></div>
+</div>
+<div class="sub">判準：150天固定起點回測、30天暖身、15天不重疊窗口 ≥60% 不輸、最大回撤 &gt;-25%、近30天≥0、≥8筆 — 五條全過才算合格</div>
+
+<footer>
+  btc-trading-bot ・ 出場規則：趨勢腿(HYPE/ZEC)=4H跌破EMA50或-8%強停，無固定止盈｜SOL回歸腿=RSI(9)&gt;70或-1.5%停損（目前停用）
+</footer>
 
 <script>
 const RAW = "https://raw.githubusercontent.com/KevinYee-yee/btc-trading-bot/main/";
-const CAP = 45, VBASE = 1000;
-const S = {SOL_B:{c:"var(--s1)",n:"原版 RSI62"},SOL_B_V2:{c:"var(--s2)",n:"V2 62+獲利≥1%"},SOL_B_V3:{c:"var(--s3)",n:"V3 RSI70"}};
+const CAP = 45;
+const HUNTERS = [
+  {key:"zec_t",  name:"ZEC",  full:"ZEC/USDT", strat:"趨勢腿 T1", color:"var(--s3)", live:true},
+  {key:"hype_t", name:"HYPE", full:"HYPE/USDT", strat:"趨勢腿 T1", color:"var(--s1)", live:true},
+  {key:"sol_b",  name:"SOL",  full:"SOL/USDT", strat:"回歸腿 V3+K1", color:"var(--s2)", live:false},
+];
+const PAPER_SHORTS = [
+  {key:"zec_ts",  name:"ZEC 空", full:"ZEC/USDT", color:"var(--s3)"},
+  {key:"hype_ts", name:"HYPE 空", full:"HYPE/USDT", color:"var(--s1)"},
+];
+
 const j = async f => { try{ const r = await fetch(RAW+f+"?t="+Date.now()); return r.ok ? r.json() : null }catch(e){ return null } };
 const t = async f => { try{ const r = await fetch(RAW+f+"?t="+Date.now()); return r.ok ? r.text() : "" }catch(e){ return "" } };
-const pct = p => p.total_pnl/(VBASE/100);
 const cls = v => v>0?"pos":v<0?"neg":"";
 const tw = s => { const d=new Date(s.replace(" ","T")+":00Z"); return isNaN(d)?s:d.toLocaleString("zh-TW",{timeZone:"Asia/Taipei",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}) };
-
-function tile(k,v,d,c){ return `<div class="tile"><div class="k">${k}</div><div class="v ${c||""}">${v}</div><div class="d">${d||""}</div></div>` }
 
 function parseCsv(txt){
   const L = txt.trim().split("\n"); if(L.length<2) return [];
@@ -89,88 +113,128 @@ function parseCsv(txt){
 }
 
 async function refresh(){
-  const [live, hb, liveCsv, pb, p2, p3, pa, pe, ph] = await Promise.all([
-    j("live_portfolio_sol_b.json"), t("live_heartbeat.txt"), t("live_trade_log_sol_b.csv"),
-    j("paper_portfolio_sol_b.json"), j("paper_portfolio_sol_b_v2.json"), j("paper_portfolio_sol_b_v3.json"),
-    j("paper_portfolio.json"), j("paper_portfolio_eth_b.json"), j("paper_portfolio_hype_b.json")
+  const [hb,
+    pZec, csvZec, pHype, csvHype, pSol, csvSol,
+    pZecTs, csvZecTs, pHypeTs, csvHypeTs,
+    scanRaw
+  ] = await Promise.all([
+    t("live_heartbeat.txt"),
+    j("live_portfolio_zec_t.json"), t("live_trade_log_zec_t.csv"),
+    j("live_portfolio_hype_t.json"), t("live_trade_log_hype_t.csv"),
+    j("live_portfolio_sol_b.json"), t("live_trade_log_sol_b.csv"),
+    j("paper_portfolio_zec_ts.json"), t("paper_trade_log_zec_ts.csv"),
+    j("paper_portfolio_hype_ts.json"), t("paper_trade_log_hype_ts.csv"),
+    t("weekly_scan_latest.json")
   ]);
 
-  // 心跳健康燈
   const hbEl = document.getElementById("hb");
   if(hb){ const age=(Date.now()-new Date(hb.trim()))/60000;
     hbEl.textContent = age<20?`🟢 排程正常（${age.toFixed(0)}分前）`:`🔴 心跳停擺 ${age.toFixed(0)} 分`;
     hbEl.className = "pill "+(age<20?"ok":"bad"); }
   document.getElementById("upd").textContent = "更新 "+new Date().toLocaleTimeString("zh-TW",{hour12:false,timeZone:"Asia/Taipei"});
 
-  // 實盤 tiles
-  if(live){
-    const real = live.total_pnl/VBASE*CAP, wr = live.total_trades?Math.round(live.wins/live.total_trades*100):0;
-    const pos = live.position>0?`持倉 @$${live.entry_price.toFixed(2)}`:"空倉";
-    const halt = live.halt_until && new Date(live.halt_until)>new Date() ? "🛑 風控停機" : "";
-    document.getElementById("live-tiles").innerHTML =
-      tile("真實累計損益", (real>=0?"+":"")+real.toFixed(2)+" U", pct(live).toFixed(2)+"%", cls(real)) +
-      tile("交易 / 勝率", `${live.total_trades}筆 / ${wr}%`, "加碼門檻：20筆且勝率≥60%") +
-      tile("目前狀態", halt||pos, halt?("至 "+live.halt_until.slice(5,16)):"") +
-      tile("連敗計數", live.consecutive_losses+" / 3", "達3觸發熔斷");
+  const portfolios = {zec_t:pZec, hype_t:pHype, sol_b:pSol};
+  const csvs = {zec_t:csvZec, hype_t:csvHype, sol_b:csvSol};
+
+  document.getElementById("hunters").innerHTML = HUNTERS.map(h=>{
+    const p = portfolios[h.key];
+    if(!p) return `<div class="card dormant"><div class="name"><span class="sym"><span class="dot" style="background:${h.color}"></span>${h.name}</span></div><div class="meta">尚無資料</div></div>`;
+    const real = p.total_pnl/1000*CAP;
+    const wr = p.total_trades ? Math.round(p.wins/p.total_trades*100) : 0;
+    const holding = p.position > 0;
+    const state = !h.live ? "dormant" : (holding ? "holding" : "armed");
+    const stateLabel = !h.live ? "⏸ 停用" : (holding ? "🔵 持倉中" : "🟡 埋伏中");
+    let extra = "";
+    if(h.live && holding){
+      const stopPx = p.live_stop_px ? `$${Number(p.live_stop_px).toFixed(2)}` : "—";
+      extra = `進場 <b>$${Number(p.entry_price).toFixed(2)}</b>・止損 <b>${stopPx}</b>`;
+    } else if(h.live){
+      extra = `等待 4H 收盤站上 EMA20（進場線）`;
+    } else {
+      extra = `重啟條件：SOL 日線收盤 &gt; $84`;
+    }
+    return `<div class="card ${state}">
+      <div class="name">
+        <span class="sym"><span class="dot" style="background:${h.color}"></span>${h.name}</span>
+        <span class="badge ${state}">${stateLabel}</span>
+      </div>
+      <div class="meta" style="margin-top:2px">${h.strat}</div>
+      <div class="ret ${h.live ? cls(real) : ''}">${h.live ? (real>=0?"+":"")+real.toFixed(2)+" U" : "—"}</div>
+      <div class="meta">${h.live ? `${p.total_trades}筆・勝率${wr}%` : "資金保護中"}</div>
+      <div class="meta" style="margin-top:6px">${extra}</div>
+    </div>`;
+  }).join("");
+
+  // 紙上做空鏡像卡片
+  const paperPortfolios = {zec_ts:pZecTs, hype_ts:pHypeTs};
+  const paperCsvs = {zec_ts:csvZecTs, hype_ts:csvHypeTs};
+  document.getElementById("papershorts").innerHTML = PAPER_SHORTS.map(h=>{
+    const p = paperPortfolios[h.key];
+    if(!p) return `<div class="card dormant"><div class="name"><span class="sym"><span class="dot" style="background:${h.color}"></span>${h.name}</span></div><div class="meta">尚無資料</div></div>`;
+    const ret = p.total_pnl/10;  // 虛擬$1000起，pnl直接就是U，換算成%
+    const wr = p.total_trades ? Math.round(p.wins/p.total_trades*100) : 0;
+    const holding = p.position > 0;
+    const state = holding ? "holding" : "armed";
+    const stateLabel = holding ? "🔻 做空中" : "🟡 找空點中";
+    const extra = holding
+      ? `進場 <b>$${Number(p.entry_price).toFixed(2)}</b>・覆蓋線 EMA50 或 +8%`
+      : `等待 4H 收盤跌破 EMA20（且日線閘門開）`;
+    return `<div class="card ${state}">
+      <div class="name">
+        <span class="sym"><span class="dot" style="background:${h.color}"></span>${h.name}</span>
+        <span class="badge ${state}">${stateLabel}</span>
+      </div>
+      <div class="meta" style="margin-top:2px">趨勢腿做空鏡像（紙上）</div>
+      <div class="ret ${cls(ret)}">${ret>=0?"+":""}${ret.toFixed(2)}%</div>
+      <div class="meta">${p.total_trades}筆・勝率${wr}%</div>
+      <div class="meta" style="margin-top:6px">${extra}</div>
+    </div>`;
+  }).join("");
+
+  let paperTrades = [];
+  for(const h of PAPER_SHORTS){
+    const rows = parseCsv(paperCsvs[h.key]);
+    rows.forEach(r => paperTrades.push({...r, sym:h.name}));
   }
-
-  // A/B 賽場
-  const ps = {SOL_B:pb, SOL_B_V2:p2, SOL_B_V3:p3};
-  let best=null,bv=-1e9;
-  for(const k in ps){ if(ps[k]&&ps[k].total_trades>=5&&pct(ps[k])>bv){bv=pct(ps[k]);best=k} }
-  document.getElementById("race").innerHTML = Object.keys(S).map(k=>{
-    const p=ps[k]; if(!p) return `<div class="card"><div class="name"><span class="dot" style="background:${S[k].c}"></span>${S[k].n}</div><div class="meta">資料累積中…</div></div>`;
-    const wr=p.total_trades?Math.round(p.wins/p.total_trades*100):0;
-    return `<div class="card ${k===best?"lead":""}"><div class="name"><span class="dot" style="background:${S[k].c}"></span>${S[k].n} ${k===best?'<span class="tag">領先</span>':''}</div>
-      <div class="ret ${cls(pct(p))}">${pct(p)>=0?"+":""}${pct(p).toFixed(2)}%</div>
-      <div class="meta">${p.total_trades}筆・勝率${wr}%・${p.position>0?"持倉":"空倉"}</div></div>`;
-  }).join("");
-
-  // 其他觀察倉
-  const oth = [["HYPE_B（新標的驗證）",ph],["A（BTC 布林+MACD）",pa],["ETH_B（熔斷待修）",pe]];
-  document.getElementById("others").innerHTML = oth.map(([n,p])=>{
-    if(!p) return "";
-    const wr=p.total_trades?Math.round(p.wins/p.total_trades*100):0;
-    const cb=p.consecutive_losses>=3?' <span class="tag">🔴熔斷</span>':"";
-    return `<div class="card"><div class="name">${n}${cb}</div><div class="ret ${cls(pct(p))}">${pct(p)>=0?"+":""}${pct(p).toFixed(2)}%</div><div class="meta">${p.total_trades}筆・勝率${wr}%</div></div>`;
-  }).join("");
-
-  // 實盤交易表
-  const rows = parseCsv(liveCsv).slice(-10).reverse();
-  document.querySelector("#trades tbody").innerHTML = rows.map(r=>{
-    const v=parseFloat((r.pnl_pct||"").replace("%","")), real=isNaN(v)?"":((v>=0?"+":"")+(v/100*CAP).toFixed(2)+" U");
-    return `<tr><td>${tw(r.time)}</td><td>${r.action==="BUY"?"買入":"賣出"}</td><td>$${parseFloat(r.price).toFixed(2)}</td>
-      <td class="${isNaN(v)?"":cls(v)}">${r.pnl_pct||"—"}</td><td class="${isNaN(v)?"":cls(v)}">${real||"—"}</td><td>${r.reason||""}</td></tr>`;
+  paperTrades.sort((a,b)=> new Date(b.time.replace(" ","T")) - new Date(a.time.replace(" ","T")));
+  paperTrades = paperTrades.slice(0,12);
+  document.querySelector("#paper-trades tbody").innerHTML = paperTrades.map(r=>{
+    const v=parseFloat((r.pnl_pct||"").replace("%",""));
+    return `<tr><td>${r.sym}</td><td>${tw(r.time)}</td><td>${r.action==="SHORT"?"做空":"覆蓋"}</td><td>$${parseFloat(r.price).toFixed(2)}</td>
+      <td class="${isNaN(v)?"":cls(v)}">${r.pnl_pct||"—"}</td><td>${r.reason||""}</td></tr>`;
   }).join("") || '<tr><td colspan="6">尚無紀錄</td></tr>';
 
-  // 資金曲線（各版本 paper_trade_log）
-  drawChart(await Promise.all(["paper_trade_log_sol_b.csv","paper_trade_log_sol_b_v2.csv","paper_trade_log_sol_b_v3.csv"].map(t)));
-}
+  // 合併交易表
+  let allTrades = [];
+  for(const h of HUNTERS){
+    const rows = parseCsv(csvs[h.key]);
+    rows.forEach(r => allTrades.push({...r, sym:h.name}));
+  }
+  allTrades.sort((a,b)=> new Date(b.time.replace(" ","T")) - new Date(a.time.replace(" ","T")));
+  allTrades = allTrades.slice(0,12);
+  document.querySelector("#trades tbody").innerHTML = allTrades.map(r=>{
+    const v=parseFloat((r.pnl_pct||"").replace("%","")), real=isNaN(v)?"":((v>=0?"+":"")+(v/100*CAP).toFixed(2)+" U");
+    return `<tr><td>${r.sym}</td><td>${tw(r.time)}</td><td>${r.action==="BUY"?"買入":"賣出"}</td><td>$${parseFloat(r.price).toFixed(2)}</td>
+      <td class="${isNaN(v)?"":cls(v)}">${r.pnl_pct||"—"}</td><td class="${isNaN(v)?"":cls(v)}">${real||"—"}</td><td>${r.reason||""}</td></tr>`;
+  }).join("") || '<tr><td colspan="7">尚無紀錄</td></tr>';
 
-function drawChart(csvs){
-  const svg=document.getElementById("equity-chart"), keys=Object.keys(S);
-  const series=csvs.map(c=>parseCsv(c).filter(r=>r.action==="SELL").map(r=>({t:new Date(r.time.replace(" ","T")+":00Z"),v:parseFloat(r.capital_after)})));
-  const all=series.flat();
-  if(all.length<2){ document.getElementById("chart-note").textContent="（比賽剛開始，資金曲線待累積）"; svg.innerHTML=""; return }
-  const W=1000,H=260,P={l:56,r:120,t:12,b:24};
-  const xs=all.map(d=>d.t.getTime()), ys=all.map(d=>d.v).concat([VBASE]);
-  const x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys)*0.998,y1=Math.max(...ys)*1.002;
-  const X=v=>P.l+(v-x0)/(x1-x0||1)*(W-P.l-P.r), Y=v=>H-P.b-(v-y0)/(y1-y0||1)*(H-P.t-P.b);
-  let g="";
-  for(let i=0;i<=3;i++){ const yv=y0+(y1-y0)*i/3, y=Y(yv);
-    g+=`<line x1="${P.l}" y1="${y}" x2="${W-P.r}" y2="${y}" stroke="var(--line)" stroke-width="1"/>
-        <text x="${P.l-8}" y="${y+4}" fill="var(--ink3)" font-size="11" text-anchor="end">$${yv.toFixed(0)}</text>`}
-  g+=`<line x1="${P.l}" y1="${Y(VBASE)}" x2="${W-P.r}" y2="${Y(VBASE)}" stroke="var(--ink3)" stroke-width="1" stroke-dasharray="4 4"/>`;
-  series.forEach((s,i)=>{ if(!s.length) return;
-    const pts=[{t:new Date(x0),v:VBASE},...s];
-    const d=pts.map((p,j)=>(j?"L":"M")+X(p.t.getTime()).toFixed(1)+" "+Y(p.v).toFixed(1)).join(" ");
-    const c=S[keys[i]].c, last=pts[pts.length-1];
-    g+=`<path d="${d}" fill="none" stroke="${c}" stroke-width="2" stroke-linejoin="round"/>
-        <circle cx="${X(last.t.getTime())}" cy="${Y(last.v)}" r="4" fill="${c}" stroke="var(--card)" stroke-width="2"/>
-        <text x="${X(last.t.getTime())+8}" y="${Y(last.v)+4}" fill="var(--ink2)" font-size="11">${S[keys[i]].n} $${last.v.toFixed(0)}</text>`;
-  });
-  document.getElementById("chart-note").textContent="";
-  svg.innerHTML=g;
+  // 週掃描結果（本地 launchd 產出 weekly_scan_latest.json，若尚未產生則顯示提示）
+  const scanBox = document.getElementById("scan-list");
+  const scanUpd = document.getElementById("scan-updated");
+  if(scanRaw){
+    try{
+      const scan = JSON.parse(scanRaw);
+      scanUpd.textContent = `最後掃描：${scan.date || "—"}（每週日 10:00 自動執行）`;
+      const passed = (scan.results||[]).filter(r=>r.pass).sort((a,b)=>b.d30-a.d30);
+      scanBox.innerHTML = passed.length ? passed.map(r=>`
+        <div class="scan-row">
+          <div class="scan-name">${r.ex} ${r.sym} × ${r.leg}</div>
+          <div class="scan-meta">${r.ret>=0?"+":""}${r.ret.toFixed(1)}%・近30天${r.d30>=0?"+":""}${r.d30.toFixed(1)}%・${r.n}筆</div>
+        </div>`).join("") : `<div class="sub">本次掃描 0 個合格組合</div>`;
+    }catch(e){ scanUpd.textContent = "掃描資料解析失敗"; }
+  } else {
+    scanUpd.textContent = "掃描結果尚未同步到 repo（本地執行中，Telegram 週報為準）";
+  }
 }
 
 refresh();
