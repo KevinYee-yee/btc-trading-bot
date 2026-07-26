@@ -119,13 +119,26 @@ def _daily_adx(d, n=14):
     dx  = 100 * (pdi - mdi).abs() / (pdi + mdi)
     return dx.ewm(alpha=1/n, adjust=False).mean().iloc[-1]
 
-def _regime_gate():
+def _regime_gate(for_short=False):
     """情境閘門（外部審查團 P0）：大盤或標的日線轉弱、死盤整時禁止新倉。
-    只擋進場，不影響出場。資料取失敗時放行（fail-open），避免誤停交易。"""
+    只擋進場，不影響出場。資料取失敗時放行（fail-open），避免誤停交易。
+    for_short=True 時為做空鏡像版：只在日線轉弱時才放行做空。"""
     try:
         d = _fetch_daily(SYMBOL)
         ema50 = d["close"].ewm(span=50, adjust=False).mean().iloc[-1]
         c_now, c_prev = d["close"].iloc[-1], d["close"].iloc[-2]
+
+        if for_short:
+            if c_now > ema50:
+                return False, f"{ASSET}日線 {c_now:.2f} > EMA50 {ema50:.2f}（標的轉強，不做空）"
+            if c_now > ema50 * 0.98 and c_now > c_prev:
+                return False, f"{ASSET}日線 {c_now:.2f} 距EMA50不足2%且動能向上（緩衝帶）"
+            gate_adx_min = float(os.environ.get("GATE_ADX_MIN", "18"))
+            adx = _daily_adx(d) if gate_adx_min > 0 else 99
+            if adx < gate_adx_min:
+                return False, f"日線ADX {adx:.0f} < {gate_adx_min:.0f}（死盤整，勝率窪地）"
+            return True, f"日線ADX {adx:.0f}，空頭閘門開"
+
         if c_now < ema50:
             return False, f"{ASSET}日線 {c_now:.2f} < EMA50 {ema50:.2f}（標的轉弱）"
         # 緩衝帶（2026-07-05週會風控決議）：貼線+動能向下=視同關閉，堵「日線未破但已在崩」空窗、防開關震盪
@@ -496,6 +509,12 @@ def get_entry_signal(df, latest):
         above  = latest["close"] > ef_now
         return above, f"EMA{int(EMA_FAST)} {ef_now:.2f}", ("✅收盤站上" if above else "❌未站上")
 
+    elif STRATEGY == "TS":
+        # 趨勢腿T的鏡像做空：收盤跌破EMA_FAST才進場（僅在情境閘門判定日線轉弱時允許，見_regime_gate for_short）
+        ef_now = df["ema_f"].iloc[-2]
+        below  = latest["close"] < ef_now
+        return below, f"EMA{int(EMA_FAST)} {ef_now:.2f}", ("✅收盤跌破" if below else "❌未跌破")
+
     return False, "—", "—"
 
 
@@ -504,8 +523,8 @@ def get_exit_reason(df, latest, portfolio):
     price       = latest["close"]
     entry_price = portfolio["entry_price"]
 
-    # 5% 硬性停損（趨勢腿T除外，T用-8%結構容忍）
-    if STRATEGY != "T" and price < entry_price * 0.95:
+    # 5% 硬性停損（趨勢腿T/TS除外，T/TS用-8%結構容忍）
+    if STRATEGY not in ("T", "TS") and price < entry_price * 0.95:
         return "跌幅超過5%強制停損"
 
     if STRATEGY == "T":
@@ -514,6 +533,14 @@ def get_exit_reason(df, latest, portfolio):
             return f"跌破EMA{int(EMA_SLOW)}趨勢出場"
         if price < entry_price * 0.92:
             return "跌幅超過8%強制停損"
+
+    if STRATEGY == "TS":
+        # 趨勢腿T做空鏡像：漲破EMA_SLOW視為反轉覆蓋，漲8%視為結構停損
+        es_now = df["ema_s"].iloc[-2]
+        if price > es_now:
+            return f"漲破EMA{int(EMA_SLOW)}趨勢覆蓋（反轉）"
+        if price > entry_price * 1.08:
+            return "漲幅超過8%強制停損"
 
     if STRATEGY == "A":
         if price >= latest["bb_upper"]:   return "觸及布林上軌停利"
@@ -593,21 +620,32 @@ def run():
     now_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:00Z")
 
     # ── 強制測試 ────────────────────────────
-    if FORCE_TEST == "buy" and portfolio["position"] == 0:
+    if FORCE_TEST == "buy" and portfolio["position"] == 0 and STRATEGY != "TS":
         print("  🧪 強制買入")
         _execute_buy(df, latest, portfolio, price, bb_upper, bb_lower, recent_low,
                      now_time, "強制測試買入", "🧪", "🧪")
         return
-    if FORCE_TEST == "sell" and portfolio["position"] > 0:
+    if FORCE_TEST == "sell" and portfolio["position"] > 0 and STRATEGY != "TS":
         print("  🧪 強制賣出")
         _execute_sell(df, latest, portfolio, price, bb_upper, bb_lower, "強制測試賣出", now_time)
+        return
+    if FORCE_TEST == "short" and portfolio["position"] == 0 and STRATEGY == "TS":
+        print("  🧪 強制做空")
+        _execute_short(df, latest, portfolio, price, now_time, "強制測試做空", "🧪", "🧪")
+        return
+    if FORCE_TEST == "cover" and portfolio["position"] > 0 and STRATEGY == "TS":
+        print("  🧪 強制覆蓋")
+        _execute_cover(df, latest, portfolio, price, "強制測試覆蓋", now_time)
         return
 
     # ── 有倉位：檢查出場 ────────────────────
     if portfolio["position"] > 0:
         reason = get_exit_reason(df, latest, portfolio)
         if reason:
-            _execute_sell(df, latest, portfolio, price, bb_upper, bb_lower, reason, now_time)
+            if STRATEGY == "TS":
+                _execute_cover(df, latest, portfolio, price, reason, now_time)
+            else:
+                _execute_sell(df, latest, portfolio, price, bb_upper, bb_lower, reason, now_time)
             return
         save_portfolio(portfolio)  # 保存 peak_price
         # 實盤：追蹤啟動後把交易所止損單上移（毫秒級鎖利）
@@ -657,7 +695,7 @@ def run():
             save_portfolio(portfolio)
             return
         if REGIME_GATE:
-            gate_ok, gate_why = _regime_gate()
+            gate_ok, gate_why = _regime_gate(for_short=(STRATEGY == "TS"))
             if not gate_ok:
                 print(f"  ⛔ 情境閘門關閉：{gate_why}，跳過進場")
                 save_portfolio(portfolio)
@@ -682,8 +720,11 @@ def run():
     # ── 無倉位：檢查進場 ────────────────────
     buy, cond1, cond2 = get_entry_signal(df, latest)
     if portfolio["position"] == 0 and buy and not in_cooldown:
-        _execute_buy(df, latest, portfolio, price, bb_upper, bb_lower, recent_low,
-                     now_time, "策略訊號進場", cond1, cond2)
+        if STRATEGY == "TS":
+            _execute_short(df, latest, portfolio, price, now_time, "策略訊號做空", cond1, cond2)
+        else:
+            _execute_buy(df, latest, portfolio, price, bb_upper, bb_lower, recent_low,
+                         now_time, "策略訊號進場", cond1, cond2)
     else:
         reason_skip = "冷卻期" if in_cooldown else f"{cond1} / {cond2}"
         print(f"  ⏸  無訊號（{reason_skip}）")
@@ -816,6 +857,70 @@ def _execute_sell(df, latest, portfolio, price, bb_upper, bb_lower, reason, now_
            f"損益：{pnl_pct:+.2f}%（{shown_pnl:+.2f} USDT{'，實盤' if LIVE_TRADE else '，模擬'}）\n"
            f"原因：{reason}")
     print(f"  {icon} 賣出 @ ${price:,.2f}  損益：{pnl_pct:+.2f}%  原因：{reason}")
+
+
+def _execute_short(df, latest, portfolio, price, now_time, reason, cond1, cond2):
+    """TS策略：紙上模擬做空進場。目前程式僅有現貨下單邏輯，尚未支援永續合約，
+    因此TS一律禁止LIVE_TRADE，只跑模擬，避免誤上實盤。"""
+    if LIVE_TRADE:
+        raise RuntimeError("TS策略尚未支援實盤（做空需永續合約，目前僅現貨程式碼），只能紙上模擬")
+
+    qty = portfolio["capital"] / price / (1 + COMMISSION)
+    portfolio["position"]    = qty
+    portfolio["peak_price"]  = price
+    portfolio["entry_price"] = price
+    portfolio["entry_time"]  = str(latest.name)
+    portfolio["capital"]     = 0.0
+    portfolio["last_candle"] = str(latest.name)
+    log_trade("SHORT", price, qty, None, reason, portfolio)
+    save_portfolio(portfolio)
+    sheets_post({"type":"trade","time":now_time,"action":"SHORT","price":str(price),
+                 "qty":str(qty),"pnl_pct":"","capital_after":"0","reason":reason,
+                 "portfolio":portfolio})
+    notify(f"🔻 做空進場（紙上模擬）｜{STRATEGY_LABEL.get(STRAT_KEY)}\n"
+           f"進場價：${price:,.2f}\n"
+           f"模擬空單：{qty:.6f} {ASSET}\n"
+           f"原因：{reason}")
+    print(f"  🔻 做空 {qty:.6f} @ ${price:,.2f}")
+
+
+def _execute_cover(df, latest, portfolio, price, reason, now_time):
+    """TS策略：紙上模擬覆蓋空頭出場。損益方向與多單相反：跌了賺、漲了虧。"""
+    qty         = portfolio["position"]
+    entry_price = portfolio["entry_price"]
+    proceeds    = qty * entry_price * (1 - COMMISSION)   # 開空當下的等值進帳
+    cover_cost  = qty * price * (1 + COMMISSION)          # 平倉買回的成本
+    pnl         = proceeds - cover_cost
+    cost_base   = qty * entry_price
+    pnl_pct     = pnl / cost_base * 100
+    portfolio["capital"]         += (cost_base + pnl)
+    portfolio["position"]         = 0.0
+    portfolio["entry_price"]      = 0.0
+    portfolio["entry_time"]       = ""
+    portfolio["peak_price"]       = 0.0
+    portfolio["last_candle"]      = str(latest.name)
+    portfolio["last_exit_candle"] = str(latest.name)
+    portfolio["total_trades"]    += 1
+    portfolio["total_pnl"]       += pnl
+    portfolio["last_exit_was_stop"] = ("停損" in reason)
+    if pnl > 0:
+        portfolio["wins"]              += 1
+        portfolio["consecutive_losses"] = 0
+    else:
+        portfolio["losses"]            += 1
+        portfolio["consecutive_losses"] = portfolio.get("consecutive_losses", 0) + 1
+    _risk_check_after_sell(portfolio, pnl_pct)
+    log_trade("COVER", price, qty, pnl_pct, reason, portfolio)
+    save_portfolio(portfolio)
+    sheets_post({"type":"trade","time":now_time,"action":"COVER","price":str(price),
+                 "qty":str(qty),"pnl_pct":f"{pnl_pct:+.2f}%","capital_after":str(portfolio["capital"]),
+                 "reason":reason,"portfolio":portfolio})
+    icon = "🟢" if pnl > 0 else "🔴"
+    notify(f"{icon} 覆蓋空頭（紙上模擬）｜{STRATEGY_LABEL.get(STRAT_KEY)}\n"
+           f"進場：${entry_price:,.2f} → 覆蓋：${price:,.2f}\n"
+           f"損益：{pnl_pct:+.2f}%（{pnl:+.2f} USDT，模擬）\n"
+           f"原因：{reason}")
+    print(f"  {icon} 覆蓋 @ ${price:,.2f}  損益：{pnl_pct:+.2f}%  原因：{reason}")
 
 
 if __name__ == "__main__":
