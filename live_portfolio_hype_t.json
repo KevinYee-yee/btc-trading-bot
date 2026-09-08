@@ -1,25 +1,26 @@
 {
-  "capital": 0.0,
-  "position": 16.773614725024,
-  "entry_price": 59.53,
-  "entry_time": "2026-08-17 04:00:00+00:00",
-  "last_candle": "2026-09-08 04:00:00+00:00",
-  "total_trades": 3,
-  "wins": 1,
+  "capital": 1390.030240622631,
+  "position": 0.0,
+  "entry_price": 0.0,
+  "entry_time": "",
+  "last_candle": "2026-09-08 08:00:00+00:00",
+  "total_trades": 4,
+  "wins": 2,
   "losses": 2,
-  "total_pnl": -0.4681821347409141,
-  "last_exit_candle": "2026-07-16 08:00:00+00:00",
-  "consecutive_losses": 1,
-  "live_algo_id": "3904548439527927808",
-  "live_stop_px": 66.6,
-  "peak_price": 59.53,
+  "total_pnl": 390.0302406226308,
+  "last_exit_candle": "2026-09-08 08:00:00+00:00",
+  "consecutive_losses": 0,
+  "live_algo_id": "",
+  "live_stop_px": 0.0,
+  "peak_price": 0.0,
   "last_exit_was_stop": false,
   "recent_pnls": [
     -0.2,
     0.584,
-    -0.428
+    -0.428,
+    39.068
   ],
-  "day_date": "2026-07-16",
-  "day_pnl": 0.156,
-  "peak_capital": 1003.8272580438497
+  "day_date": "2026-09-08",
+  "day_pnl": 39.068,
+  "peak_capital": 1390.030240622631
 }
