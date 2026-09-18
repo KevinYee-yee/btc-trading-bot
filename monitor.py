@@ -196,18 +196,30 @@ def check_emergency_stop():
         return True
     return False
 
-def _live_check_balance():
-    """缺口4：進場前確認 OKX USDT 餘額 >= LIVE_CAPITAL"""
+def _live_check_balance(need=None):
+    """缺口4：進場前確認 OKX USDT 餘額 >= 本次實際下注金額（need，預設LIVE_CAPITAL）"""
+    need = LIVE_CAPITAL if need is None else need
     try:
         bal = live_exchange.fetch_balance()
         usdt_free = float(bal.get("USDT", {}).get("free", 0))
-        if usdt_free < LIVE_CAPITAL * 0.95:
-            notify(f"⚠️ [{STRAT_KEY}] USDT 餘額不足：帳戶 {usdt_free:.2f} < 需要 {LIVE_CAPITAL:.2f}")
+        if usdt_free < need * 0.95:
+            notify(f"⚠️ [{STRAT_KEY}] USDT 餘額不足：帳戶 {usdt_free:.2f} < 需要 {need:.2f}")
             return False
         return True
     except Exception as e:
         notify(f"🚨 [{STRAT_KEY}] 餘額查詢失敗：{e}")
         return False
+
+# 部分複利（2026-09-19，Kevin拍板）：本金LIVE_CAPITAL不動，超過本金的獲利只有一半滾入下一筆本金，
+# 虧損則全額反映（讓連敗時部位自然縮小，跟帳戶回撤熔斷互補），下限為本金的30%避免部位縮到失去意義
+COMPOUND_PROFIT_SHARE = 0.5
+BANKROLL_FLOOR_PCT    = 0.3
+
+def _next_bankroll(bankroll_used, real_pnl_dollars):
+    new_total = bankroll_used + real_pnl_dollars
+    delta = new_total - LIVE_CAPITAL
+    next_bankroll = LIVE_CAPITAL + (delta * COMPOUND_PROFIT_SHARE if delta > 0 else delta)
+    return max(next_bankroll, LIVE_CAPITAL * BANKROLL_FLOOR_PCT)
 
 def _live_get_position_qty():
     """缺口6：從 OKX 讀取當前標的真實持倉量
@@ -755,10 +767,12 @@ def _execute_buy(df, latest, portfolio, price, bb_upper, bb_lower, recent_low,
                    f"，為防重複下單已攔截本次進場，請人工核對帳本與交易所")
             print(f"  🚫 已持有 {real_qty:.6f} {ASSET}，攔截重複買入")
             return
-        if not _live_check_balance():
+        bankroll = portfolio.get("live_bankroll", LIVE_CAPITAL)
+        if not _live_check_balance(bankroll):
             print("  ❌ 餘額不足，取消本次進場")
             return
-        live_qty = round(LIVE_CAPITAL / price, 6)
+        live_qty = round(bankroll / price, 6)
+        portfolio["live_bankroll_at_entry"] = bankroll
         order = _live_maker_buy(live_qty, price)
         if order is None:
             print("  ❌ 實盤進場未成交，取消本次進場")
@@ -790,9 +804,10 @@ def _execute_buy(df, latest, portfolio, price, bb_upper, bb_lower, recent_low,
                  "cond_bb":cond1,"cond_macd":cond2,"signal":"進場","account_status":"持倉",
                  "portfolio":portfolio})
     label_prefix = "🔴 【實盤】" if LIVE_TRADE else "🔔"
+    bankroll_note = f"（本注 ${portfolio['live_bankroll_at_entry']:,.2f}）" if LIVE_TRADE else ""
     notify(f"{label_prefix} 進場｜{STRATEGY_LABEL.get(STRAT_KEY)}\n"
            f"進場價：${price:,.2f}\n"
-           f"{'實盤' if LIVE_TRADE else '模擬'}買入：{(round(LIVE_CAPITAL/price,6) if LIVE_TRADE else qty):.6f} {ASSET}\n"
+           f"{'實盤' if LIVE_TRADE else '模擬'}買入：{(round(portfolio.get('live_bankroll_at_entry', LIVE_CAPITAL)/price,6) if LIVE_TRADE else qty):.6f} {ASSET}{bankroll_note}\n"
            f"原因：{reason}")
     print(f"  🔔 買入 {qty:.6f} @ ${price:,.2f}")
 
@@ -842,6 +857,13 @@ def _execute_sell(df, latest, portfolio, price, bb_upper, bb_lower, reason, now_
     else:
         portfolio["losses"]           += 1
         portfolio["consecutive_losses"] = portfolio.get("consecutive_losses", 0) + 1
+
+    # 部分複利（2026-09-19）：本次實際下注金額(bankroll_at_entry)的損益，決定下一筆的本金
+    bankroll_used     = portfolio.get("live_bankroll_at_entry", LIVE_CAPITAL)
+    real_pnl_dollars  = pnl_pct / 100 * bankroll_used if LIVE_TRADE else pnl
+    if LIVE_TRADE:
+        portfolio["live_bankroll"] = _next_bankroll(bankroll_used, real_pnl_dollars)
+
     _risk_check_after_sell(portfolio, pnl_pct)
     log_trade("SELL", price, qty, pnl_pct, reason, portfolio)
     save_portfolio(portfolio)
@@ -850,10 +872,10 @@ def _execute_sell(df, latest, portfolio, price, bb_upper, bb_lower, reason, now_
                  "reason":reason,"portfolio":portfolio,"bb_upper":str(bb_upper),"bb_lower":str(bb_lower)})
     icon = "🟢" if pnl > 0 else "🔴"
     live_tag = " 【實盤】" if LIVE_TRADE else ""
-    shown_pnl = pnl_pct / 100 * LIVE_CAPITAL if LIVE_TRADE else pnl
+    next_bankroll_note = f"\n下一筆本金：${portfolio['live_bankroll']:,.2f}" if LIVE_TRADE else ""
     notify(f"{icon}{live_tag} 出場｜{STRATEGY_LABEL.get(STRAT_KEY)}\n"
            f"進場：${entry_price:,.2f} → 出場：${price:,.2f}\n"
-           f"損益：{pnl_pct:+.2f}%（{shown_pnl:+.2f} USDT{'，實盤' if LIVE_TRADE else '，模擬'}）\n"
+           f"損益：{pnl_pct:+.2f}%（{real_pnl_dollars:+.2f} USDT{'，實盤' if LIVE_TRADE else '，模擬'}）{next_bankroll_note}\n"
            f"原因：{reason}")
     print(f"  {icon} 賣出 @ ${price:,.2f}  損益：{pnl_pct:+.2f}%  原因：{reason}")
 
