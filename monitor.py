@@ -210,16 +210,27 @@ def _live_check_balance(need=None):
         notify(f"🚨 [{STRAT_KEY}] 餘額查詢失敗：{e}")
         return False
 
-# 部分複利（2026-09-19，Kevin拍板）：本金LIVE_CAPITAL不動，超過本金的獲利只有一半滾入下一筆本金，
-# 虧損則全額反映（讓連敗時部位自然縮小，跟帳戶回撤熔斷互補），下限為本金的30%避免部位縮到失去意義
-COMPOUND_PROFIT_SHARE = 0.5
-BANKROLL_FLOOR_PCT    = 0.3
+# 資金池比例下注（2026-09-19，Kevin拍板，取代先前的單策略部分複利）：
+# 不追蹤單一策略自己的輸贏史，每次進場當下直接問交易所「現在總資產多少」，
+# 拿其中的 POOL_FRACTION（預設一半）當這一筆的本金。哪個策略先進場就先分走那一半，
+# 天然讓「總曝險不超過現有總資產」，不需要額外的回撤上限。
+POOL_FRACTION = float(os.environ.get("POOL_FRACTION", "0.5"))
+POOL_ASSETS   = ["ZEC", "HYPE"]  # 目前有實盤資金的標的，總資產查詢時一併估值
 
-def _next_bankroll(bankroll_used, real_pnl_dollars):
-    new_total = bankroll_used + real_pnl_dollars
-    delta = new_total - LIVE_CAPITAL
-    next_bankroll = LIVE_CAPITAL + (delta * COMPOUND_PROFIT_SHARE if delta > 0 else delta)
-    return max(next_bankroll, LIVE_CAPITAL * BANKROLL_FLOOR_PCT)
+def _live_total_equity():
+    """查詢OKX真實總資產：USDT可用餘額 + 所有實盤標的目前持倉現值。查詢失敗回傳None（呼叫端退回LIVE_CAPITAL）"""
+    try:
+        bal = live_exchange.fetch_balance()
+        total = float(bal.get("USDT", {}).get("free", 0)) + float(bal.get("USDT", {}).get("used", 0))
+        for a in POOL_ASSETS:
+            qty = float(bal.get(a, {}).get("total", 0))
+            if qty > 0.0001:
+                px = float(live_exchange.fetch_ticker(f"{a}/USDT")["last"])
+                total += qty * px
+        return total
+    except Exception as e:
+        print(f"  ⚠️ 查詢總資產失敗，退回LIVE_CAPITAL：{e}")
+        return None
 
 def _live_get_position_qty():
     """缺口6：從 OKX 讀取當前標的真實持倉量
@@ -767,7 +778,8 @@ def _execute_buy(df, latest, portfolio, price, bb_upper, bb_lower, recent_low,
                    f"，為防重複下單已攔截本次進場，請人工核對帳本與交易所")
             print(f"  🚫 已持有 {real_qty:.6f} {ASSET}，攔截重複買入")
             return
-        bankroll = portfolio.get("live_bankroll", LIVE_CAPITAL)
+        equity = _live_total_equity()
+        bankroll = round(equity * POOL_FRACTION, 2) if equity else LIVE_CAPITAL
         if not _live_check_balance(bankroll):
             print("  ❌ 餘額不足，取消本次進場")
             return
@@ -858,11 +870,10 @@ def _execute_sell(df, latest, portfolio, price, bb_upper, bb_lower, reason, now_
         portfolio["losses"]           += 1
         portfolio["consecutive_losses"] = portfolio.get("consecutive_losses", 0) + 1
 
-    # 部分複利（2026-09-19）：本次實際下注金額(bankroll_at_entry)的損益，決定下一筆的本金
+    # 資金池比例下注：本次實際下注金額(bankroll_at_entry，進場當下總資產的一半)算出真實損益，
+    # 純粹記錄用途——下一筆進場會重新查詢當下總資產，不需要從這一筆往前carry任何狀態
     bankroll_used     = portfolio.get("live_bankroll_at_entry", LIVE_CAPITAL)
     real_pnl_dollars  = pnl_pct / 100 * bankroll_used if LIVE_TRADE else pnl
-    if LIVE_TRADE:
-        portfolio["live_bankroll"] = _next_bankroll(bankroll_used, real_pnl_dollars)
 
     _risk_check_after_sell(portfolio, pnl_pct)
     log_trade("SELL", price, qty, pnl_pct, reason, portfolio)
@@ -872,10 +883,9 @@ def _execute_sell(df, latest, portfolio, price, bb_upper, bb_lower, reason, now_
                  "reason":reason,"portfolio":portfolio,"bb_upper":str(bb_upper),"bb_lower":str(bb_lower)})
     icon = "🟢" if pnl > 0 else "🔴"
     live_tag = " 【實盤】" if LIVE_TRADE else ""
-    next_bankroll_note = f"\n下一筆本金：${portfolio['live_bankroll']:,.2f}" if LIVE_TRADE else ""
     notify(f"{icon}{live_tag} 出場｜{STRATEGY_LABEL.get(STRAT_KEY)}\n"
            f"進場：${entry_price:,.2f} → 出場：${price:,.2f}\n"
-           f"損益：{pnl_pct:+.2f}%（{real_pnl_dollars:+.2f} USDT{'，實盤' if LIVE_TRADE else '，模擬'}）{next_bankroll_note}\n"
+           f"損益：{pnl_pct:+.2f}%（{real_pnl_dollars:+.2f} USDT{'，實盤' if LIVE_TRADE else '，模擬'}）\n"
            f"原因：{reason}")
     print(f"  {icon} 賣出 @ ${price:,.2f}  損益：{pnl_pct:+.2f}%  原因：{reason}")
 
