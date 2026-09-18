@@ -801,11 +801,10 @@ def _execute_sell(df, latest, portfolio, price, bb_upper, bb_lower, reason, now_
     # 缺口1/3/6：實盤賣出（先賣成功才更新 portfolio；失敗保留持倉等下次重試）
     if LIVE_TRADE:
         # 先撤交易所止損單，避免與本次賣出重複成交
-        if portfolio.get("live_algo_id"):
-            _live_cancel_stop(portfolio["live_algo_id"])
-            portfolio["live_algo_id"] = ""
-        elif portfolio.get("live_stop_px"):
-            _live_cancel_all_stops()  # algo_id遺失時的備援撤單
+        # 2026-09-08修復：帳本algo_id手動調整止損後容易失準（HYPE 51008事故：撤到不存在的舊id，
+        # 真實止損單未撤=餘額被鎖=賣單被交易所拒絕），改成一律查交易所真實掛單撤銷，不信任帳本id
+        _live_cancel_all_stops()
+        portfolio["live_algo_id"] = ""
         live_qty = _live_get_position_qty()
         if live_qty is None:
             print("  ❌ 無法取得持倉，保留狀態待下次重試")

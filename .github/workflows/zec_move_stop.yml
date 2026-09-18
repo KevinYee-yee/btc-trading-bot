@@ -47,7 +47,10 @@ jobs:
               print(f"已撤銷舊止損 {aid}")
 
           order = ex.create_order("ZEC/USDT", "market", "sell", qty, None, {"stopLossPrice": new_stop, "tdMode": "cash"})
-          print(f"✅ 新止損已掛：跌至 ${new_stop} 自動賣出（algoId={order.get('id')}）")
+          new_algo_id = order.get("id") or ""
+          print(f"✅ 新止損已掛：跌至 ${new_stop} 自動賣出（algoId={new_algo_id}）")
+          with open("/tmp/new_algo_id.txt", "w") as f:
+              f.write(new_algo_id)
           PYEOF
 
       - name: 更新帳本記錄
@@ -56,6 +59,10 @@ jobs:
           import json
           p = json.load(open('live_portfolio_zec_t.json'))
           p['live_stop_px'] = float('${{ github.event.inputs.new_stop_price }}')
+          with open('/tmp/new_algo_id.txt') as f:
+              new_algo_id = f.read().strip()
+          if new_algo_id:
+              p['live_algo_id'] = new_algo_id
           json.dump(p, open('live_portfolio_zec_t.json','w'), indent=2)
           "
           git config user.name  "github-actions[bot]"
