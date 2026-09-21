@@ -1,0 +1,57 @@
+name: 🟡 DOGE 均值回歸（紙上模擬）
+
+on:
+  schedule:
+    - cron: "11,21,31,41,51 * * * *"
+  workflow_dispatch:
+    inputs:
+      force_test:
+        description: '強制測試 (buy / sell / 留空)'
+        required: false
+        default: ''
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    if: ${{ vars.PAPER_MEANREV_DOGE != 'off' }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install ccxt pandas numpy
+
+      - name: Run DOGE Mean Reversion (PAPER)
+        id: trade
+        env:
+          STRATEGY:         MR
+          SYMBOL:           DOGE/USDT
+          TIMEFRAME:        4h
+          LIVE_TRADE:       "false"
+          TELEGRAM_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GS_WEBHOOK:       ${{ secrets.GS_WEBHOOK }}
+          FORCE_TEST:       ${{ github.event.inputs.force_test }}
+        run: python monitor.py
+
+      - name: Commit portfolio state
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add paper_portfolio_doge_mr.json 2>/dev/null || true
+          git add paper_trade_log_doge_mr.csv 2>/dev/null || true
+          git diff --cached --quiet || git commit -m "🟡PAPER DOGE-MR $(date -u '+%Y-%m-%d %H:%M UTC') 更新"
+          for i in 1 2 3 4 5; do
+            git pull --rebase -X theirs origin main || { git rebase --abort 2>/dev/null || true; sleep 2; continue; }
+            if git push; then exit 0; fi
+            sleep $((RANDOM % 8 + 2))
+          done
+          echo "::warning::推送重試5次失敗（下輪自動補）"
+          exit 1

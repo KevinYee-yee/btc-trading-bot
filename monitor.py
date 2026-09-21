@@ -42,6 +42,15 @@ EMA_SLOW        = float(os.environ.get("EMA_SLOW", "48"))
 COOLDOWN_BARS   = 4   # P1：出場後冷卻根數（B/ETH_B 用）
 EMA_TREND_BARS  = 48  # 策略B趨勢過濾 lookback（根）：原20根(5h)→48根(12h)，2026-06-21 5人會議
 
+# 均值回歸腿 MR（2026-09-22，NEAR/DOGE驗證中，紙上）：RSI(14)超賣接刀+EMA100緩衝過濾，
+# 結構型停損（前波低點），跟趨勢腿T的固定8%完全獨立，互不影響
+RSI14_PERIOD    = 14
+RSI_BUY_MR      = float(os.environ.get("RSI_BUY_MR", "35"))
+RSI_SELL_MR     = float(os.environ.get("RSI_SELL_MR", "60"))
+EMA_TREND_MR    = int(os.environ.get("EMA_TREND_MR", "100"))
+MR_SWING_LOOKBACK = int(os.environ.get("MR_SWING_LOOKBACK", "20"))  # 結構停損：往前找幾根K棒的低點
+MR_STOP_BUFFER  = float(os.environ.get("MR_STOP_BUFFER", "0.5"))    # 停損放在波段低點再往下留的緩衝%
+
 # 策略唯一鍵（含標的前綴）：BTC 沿用裸鍵，其餘幣種 = 幣名_策略
 ASSET = SYMBOL.split("/")[0] if "/" in SYMBOL else "BTC"
 STRAT_KEY = STRATEGY if ASSET == "BTC" else f"{ASSET}_{STRATEGY}"
@@ -60,6 +69,8 @@ STRATEGY_LABEL = {
     "ETH_C": "ETH 策略C：EMA13/48",
     "SOL_B": "SOL 策略B：RSI(9)<40",
     "SOL_C": "SOL 策略C：EMA13/48",
+    "NEAR_MR": "NEAR 均值回歸：RSI14超賣+結構停損",
+    "DOGE_MR": "DOGE 均值回歸：RSI14超賣+結構停損",
 }
 if VARIANT:
     STRATEGY_LABEL.setdefault(STRAT_KEY, f"{ASSET} 策略{STRATEGY}·{VARIANT}變體")
@@ -159,6 +170,27 @@ def _regime_gate(for_short=False):
     except Exception as e:
         print(f"  ⚠️ 情境閘門資料取得失敗，本次放行：{e}")
         return True, "gate-error"
+
+MACRO_GATE      = os.environ.get("MACRO_GATE", "true").lower() == "true"
+MACRO_DROP_PCT  = float(os.environ.get("MACRO_DROP_PCT", "15"))  # BTC 7天跌幅超過此值視為系統性風險
+
+def _macro_regime_ok():
+    """大盤總閘（2026-09-22 Kevin拍板）：BTC自己7天內重挫，代表市場進入系統性風險（崩盤時
+    所有標的相關性趨近1），此時全部策略（不分幣種/不分做多做空腿）一律暫停開新倉，只擋進場、
+    不影響既有持倉的出場/停損。刻意選擇「暫停」而非「自動翻空」——崩盤中的劇烈反彈最容易巴停損，
+    做空需要自己走完三關驗證才能上，不是臨時拿來對沖用的。付費API失敗時放行（fail-open）。"""
+    if not MACRO_GATE:
+        return True, "大盤總閘已關閉(MACRO_GATE=false)"
+    try:
+        d = _fetch_daily("BTC/USDT", limit=10)
+        c_now, c_7d_ago = d["close"].iloc[-1], d["close"].iloc[-8]
+        drop_7d = (c_now / c_7d_ago - 1) * 100
+        if drop_7d <= -MACRO_DROP_PCT:
+            return False, f"BTC 7天內重挫{drop_7d:.1f}%（≤-{MACRO_DROP_PCT:.0f}%），大盤總閘關閉，全策略暫停新倉"
+        return True, f"BTC 7天{drop_7d:+.1f}%，大盤總閘開"
+    except Exception as e:
+        print(f"  ⚠️ 大盤總閘資料取得失敗，本次放行：{e}")
+        return True, "macro-gate-error"
 
 def _risk_check_after_sell(portfolio, pnl_pct):
     """實盤風控三件套（外部審查團 P0）：
@@ -476,6 +508,13 @@ def fetch_and_calc():
     df["ema_f"] = df["close"].ewm(span=EMA_FAST, adjust=False).mean()
     df["ema_s"] = df["close"].ewm(span=EMA_SLOW, adjust=False).mean()
 
+    # RSI(14) + EMA100（策略 MR 均值回歸用）
+    delta14      = df["close"].diff()
+    gain14       = delta14.clip(lower=0).rolling(RSI14_PERIOD).mean()
+    loss14       = (-delta14.clip(upper=0)).rolling(RSI14_PERIOD).mean()
+    df["rsi14"]  = 100 - (100 / (1 + gain14 / loss14))
+    df["ema_trend_mr"] = df["close"].ewm(span=EMA_TREND_MR, adjust=False).mean()
+
     # MACD 信號線穿越（策略 D 用）
     df["macd_sig_cross"] = (df["macd"] > df["macd_sig"]) & (df["macd"].shift(1) <= df["macd_sig"].shift(1))
     df["macd_sig_death"] = (df["macd"] < df["macd_sig"]) & (df["macd"].shift(1) >= df["macd_sig"].shift(1))
@@ -538,6 +577,16 @@ def get_entry_signal(df, latest):
         below  = latest["close"] < ef_now
         return below, f"EMA{int(EMA_FAST)} {ef_now:.2f}", ("✅收盤跌破" if below else "❌未跌破")
 
+    elif STRATEGY == "MR":
+        rsi14   = latest["rsi14"]
+        ema_t   = latest["ema_trend_mr"]
+        oversold = rsi14 < RSI_BUY_MR
+        not_collapsing = latest["close"] > ema_t * 0.9  # 避免在長期均線大幅下方接刀（真崩盤時擋掉）
+        ok = oversold and not_collapsing
+        c1 = f"RSI(14) {rsi14:.1f}{'✅' if oversold else '❌'}<{RSI_BUY_MR:.0f}"
+        c2 = f"EMA{EMA_TREND_MR}緩衝{'✅' if not_collapsing else '❌跌破緩衝'}"
+        return ok, c1, c2
+
     return False, "—", "—"
 
 
@@ -546,8 +595,8 @@ def get_exit_reason(df, latest, portfolio):
     price       = latest["close"]
     entry_price = portfolio["entry_price"]
 
-    # 5% 硬性停損（趨勢腿T/TS除外，T/TS用-8%結構容忍）
-    if STRATEGY not in ("T", "TS") and price < entry_price * 0.95:
+    # 5% 硬性停損（趨勢腿T/TS、均值回歸腿MR除外，各自用自己的停損邏輯）
+    if STRATEGY not in ("T", "TS", "MR") and price < entry_price * 0.95:
         return "跌幅超過5%強制停損"
 
     if STRATEGY == "T":
@@ -564,6 +613,15 @@ def get_exit_reason(df, latest, portfolio):
             return f"漲破EMA{int(EMA_SLOW)}趨勢覆蓋（反轉）"
         if price > entry_price * 1.08:
             return "漲幅超過8%強制停損"
+
+    if STRATEGY == "MR":
+        # 結構型停損：前波低點（進場當下算好存在struct_stop，不是死板%），跟趨勢腿T的固定8%無關
+        struct_stop = portfolio.get("struct_stop", entry_price * 0.95)
+        if price < struct_stop:
+            return f"結構停損（跌破前波低點 ${struct_stop:,.4f}）"
+        rsi14 = latest["rsi14"]
+        if rsi14 > RSI_SELL_MR:
+            return f"RSI(14)>{RSI_SELL_MR:.0f}均值回歸出場"
 
     if STRATEGY == "A":
         if price >= latest["bb_upper"]:   return "觸及布林上軌停利"
@@ -724,6 +782,13 @@ def run():
                 save_portfolio(portfolio)
                 return
 
+    # ── 大盤總閘（不分策略/不分live或paper，一律檢查，讓紙上紀錄也反映真實會發生的暫停）──
+    macro_ok, macro_why = _macro_regime_ok()
+    if not macro_ok:
+        print(f"  🌍 {macro_why}")
+        save_portfolio(portfolio)
+        return
+
     # ── 冷卻期檢查（B/ETH_B + D 用）────────
     in_cooldown = False
     if STRATEGY in ("B", "D"):
@@ -799,6 +864,12 @@ def _execute_buy(df, latest, portfolio, price, bb_upper, bb_lower, recent_low,
             portfolio["live_algo_id"] = _live_place_stop(avail, stop_px0)
             portfolio["live_stop_px"] = stop_px0
 
+    if STRATEGY == "MR":
+        # 結構型停損：進場當下往前抓MR_SWING_LOOKBACK根K棒的低點（排除最新2根，避免用到還在走的那根），
+        # 不是死板固定%——跟趨勢腿T的STOP_PCT完全獨立的欄位(struct_stop)，互不影響
+        swing_low = df["low"].iloc[-(MR_SWING_LOOKBACK + 2):-2].min()
+        portfolio["struct_stop"] = round(swing_low * (1 - MR_STOP_BUFFER / 100), 6)
+
     qty = portfolio["capital"] / price / (1 + COMMISSION)
     portfolio["position"]    = qty
     portfolio["peak_price"]  = price
@@ -858,6 +929,7 @@ def _execute_sell(df, latest, portfolio, price, bb_upper, bb_lower, reason, now_
     portfolio["entry_time"]      = ""
     portfolio["peak_price"]      = 0.0
     portfolio["live_stop_px"]    = 0.0
+    portfolio["struct_stop"]     = 0.0
     portfolio["last_candle"]     = str(latest.name)
     portfolio["last_exit_candle"] = str(latest.name)  # P1：記錄出場K線供冷卻期用
     portfolio["total_trades"]   += 1
