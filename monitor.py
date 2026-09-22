@@ -867,6 +867,17 @@ def run():
 
 def _execute_buy(df, latest, portfolio, price, bb_upper, bb_lower, recent_low,
                  now_time, reason, cond1, cond2):
+    # MR結構停損/停利先算好（進場價格區間可能<$1，用6位小數，跟趨勢腿T的2位小數分開處理，
+    # 2026-09-22 DOGE force_test發現的真實bug：round(...,2)在$0.1價位會把停損價跟現價磨成同一個數字，
+    # 被OKX 51280拒單——2位小數對BTC/ZEC這種高價位夠用，對DOGE這種<$1的完全不夠）
+    mr_struct_stop = mr_target = None
+    if STRATEGY == "MR":
+        swing_low = df["low"].iloc[-(MR_SWING_LOOKBACK + 2):-2].min()
+        mr_struct_stop = round(swing_low * (1 - MR_STOP_BUFFER / 100), 6)
+        if MR_MIN_RR > 0:
+            swing_high = df["high"].iloc[-(MR_SWING_LOOKBACK + 2):-2].max()
+            mr_target = round(swing_high, 6)
+
     # 缺口1/2/3/4：實盤下單（先下單成功才更新 portfolio）
     if LIVE_TRADE:
         # 重複買入硬性守門員（2026-07-11修復）：帳本可能因同步漏洞誤判空倉，
@@ -897,19 +908,17 @@ def _execute_buy(df, latest, portfolio, price, bb_upper, bb_lower, recent_low,
         time.sleep(1)
         avail = _live_get_position_qty() or 0
         if avail > 0.0001:
-            stop_px0 = round(price * (1 - STOP_PCT / 100), 2)
+            stop_px0 = mr_struct_stop if STRATEGY == "MR" else round(price * (1 - STOP_PCT / 100), 2)
             portfolio["live_algo_id"] = _live_place_stop(avail, stop_px0)
             portfolio["live_stop_px"] = stop_px0
 
     if STRATEGY == "MR":
         # 結構型停損：進場當下往前抓MR_SWING_LOOKBACK根K棒的低點（排除最新2根，避免用到還在走的那根），
         # 不是死板固定%——跟趨勢腿T的STOP_PCT完全獨立的欄位(struct_stop)，互不影響
-        swing_low = df["low"].iloc[-(MR_SWING_LOOKBACK + 2):-2].min()
-        portfolio["struct_stop"] = round(swing_low * (1 - MR_STOP_BUFFER / 100), 6)
-        if MR_MIN_RR > 0:
+        portfolio["struct_stop"] = mr_struct_stop
+        if mr_target is not None:
             # 賺賠比篩選開啟時（目前僅DOGE），停利目標=前波高點，達標主動停利
-            swing_high = df["high"].iloc[-(MR_SWING_LOOKBACK + 2):-2].max()
-            portfolio["mr_target"] = round(swing_high, 6)
+            portfolio["mr_target"] = mr_target
 
     qty = portfolio["capital"] / price / (1 + COMMISSION)
     portfolio["position"]    = qty
