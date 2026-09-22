@@ -1,0 +1,72 @@
+name: 🔴 BTC 均值回歸 見習實盤 OKX
+
+on:
+  schedule:
+    - cron: "17,27,37,47,57 * * * *"
+  workflow_dispatch:
+    inputs:
+      force_test:
+        description: '強制測試 (buy / sell / 留空)'
+        required: false
+        default: ''
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    if: ${{ vars.LIVE_MEANREV_BTC == 'on' }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install ccxt pandas numpy
+
+      - name: Run BTC Mean Reversion (LIVE, 見習期)
+        id: trade
+        env:
+          STRATEGY:         MR
+          SYMBOL:           BTC/USDT
+          TIMEFRAME:        4h
+          USE_POOL_SIZING:  "false"
+          PROBATION_TRADES: "10"
+          LIVE_TRADE:       "true"
+          LIVE_CAPITAL:     ${{ vars.LIVE_CAPITAL_BTC_MR || '15' }}
+          OKX_API_KEY:      ${{ secrets.OKX_API_KEY }}
+          OKX_SECRET:       ${{ secrets.OKX_SECRET }}
+          OKX_PASSPHRASE:   ${{ secrets.OKX_PASSPHRASE }}
+          TELEGRAM_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GS_WEBHOOK:       ${{ secrets.GS_WEBHOOK }}
+          FORCE_TEST:       ${{ github.event.inputs.force_test }}
+        run: python monitor.py
+
+      - name: Commit portfolio state
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # 注意：BTC沿用monitor.py舊命名慣例(ASSET==BTC時STRAT_KEY不加前綴)，
+          # 檔名是裸的 live_portfolio_mr.json，不是live_portfolio_btc_mr.json
+          git add live_portfolio_mr.json 2>/dev/null || true
+          git add live_trade_log_mr.csv 2>/dev/null || true
+          git diff --cached --quiet || git commit -m "🔴LIVE BTC-MR $(date -u '+%Y-%m-%d %H:%M UTC') 更新"
+          for i in 1 2 3 4 5; do
+            git pull --rebase -X theirs origin main || { git rebase --abort 2>/dev/null || true; sleep 2; continue; }
+            if git push; then exit 0; fi
+            sleep $((RANDOM % 8 + 2))
+          done
+          echo "::warning::推送重試5次失敗（下輪自動補）"
+          exit 1
+
+      - name: 狀態保存失敗告警
+        if: failure() && steps.trade.outcome == 'success'
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="⚠️【BTC見習實盤】交易已執行但帳本保存失敗！帳本可能與交易所脫鉤，請通知Claude核對。run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"

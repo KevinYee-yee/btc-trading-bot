@@ -54,6 +54,7 @@ MR_STOP_BUFFER  = float(os.environ.get("MR_STOP_BUFFER", "0.5"))    # 停損放�
 # 只有DOGE穩定變好(3段walk-forward全正)）：停利目標=前波高點，進場前算(目標-進場)/(進場-停損)，
 # 不足MR_MIN_RR就跳過這次訊號。預設0=關閉，維持NEAR/BTC原本「RSI回歸就出場」的行為不變
 MR_MIN_RR       = float(os.environ.get("MR_MIN_RR", "0"))
+PROBATION_TRADES = int(os.environ.get("PROBATION_TRADES", "0"))  # 見習期加嚴熔斷筆數，0=關閉
 
 # 策略唯一鍵（含標的前綴）：BTC 沿用裸鍵，其餘幣種 = 幣名_策略
 ASSET = SYMBOL.split("/")[0] if "/" in SYMBOL else "BTC"
@@ -214,11 +215,25 @@ def _risk_check_after_sell(portfolio, pnl_pct):
     dd = (portfolio["capital"] - peak) / peak * 100
 
     halt, why = None, ""
-    if dd <= -10:
+
+    # 見習期加嚴（2026-09-22，DOGE/BTC均值回歸首次上真錢用）：前PROBATION_TRADES筆用比
+    # 正常三件套更嚴格的門檻，中了就停機30天強制人工檢視，不像正常熔斷會自動解凍
+    if PROBATION_TRADES > 0 and portfolio.get("total_trades", 0) <= PROBATION_TRADES:
+        recent5 = portfolio["recent_pnls"][-5:]
+        losses5 = sum(1 for p in recent5 if p < 0)
+        cum_probation = sum(portfolio["recent_pnls"][-PROBATION_TRADES:])
+        if len(recent5) >= 5 and losses5 >= 3:
+            halt, why = now + timedelta(days=30), f"見習期前5筆內{losses5}敗 → 停機30天，需人工檢視"
+        elif pnl_pct <= -10:
+            halt, why = now + timedelta(days=30), f"見習期單筆虧損{pnl_pct:.1f}%（≤-10%）→ 停機30天，需人工檢視"
+        elif cum_probation <= -15:
+            halt, why = now + timedelta(days=30), f"見習期累計{cum_probation:.1f}%（≤-15%）→ 停機30天，需人工檢視"
+
+    if not halt and dd <= -10:
         halt, why = now + timedelta(days=7), f"帳戶自峰值回撤 {dd:.1f}%（≤-10%）→ 全面停機 7 天冷靜期"
-    elif len(portfolio["recent_pnls"]) >= 5 and sum(portfolio["recent_pnls"]) <= -4:
+    elif not halt and len(portfolio["recent_pnls"]) >= 5 and sum(portfolio["recent_pnls"]) <= -4:
         halt, why = now + timedelta(hours=48), f"滾動{len(portfolio['recent_pnls'])}筆淨損 {sum(portfolio['recent_pnls']):.1f}%（≤-4%）→ 熔斷 48 小時"
-    elif portfolio["day_pnl"] <= -3:
+    elif not halt and portfolio["day_pnl"] <= -3:
         halt, why = now + timedelta(hours=12), f"單日虧損 {portfolio['day_pnl']:.1f}%（≤-3%）→ 今日停單"
     if halt:
         portfolio["halt_until"] = halt.isoformat()
@@ -252,6 +267,9 @@ def _live_check_balance(need=None):
 # 天然讓「總曝險不超過現有總資產」，不需要額外的回撤上限。
 POOL_FRACTION = float(os.environ.get("POOL_FRACTION", "0.5"))
 POOL_ASSETS   = ["ZEC", "HYPE"]  # 目前有實盤資金的標的，總資產查詢時一併估值
+# 見習期策略（2026-09-22，DOGE/BTC均值回歸首次上真錢）不吃資金池，用獨立固定小額本金，
+# 虧光也不影響ZEC/HYPE主力：USE_POOL_SIZING=false時直接用LIVE_CAPITAL
+USE_POOL_SIZING = os.environ.get("USE_POOL_SIZING", "true").lower() == "true"
 
 def _live_total_equity():
     """查詢OKX真實總資產：USDT可用餘額 + 所有實盤標的目前持倉現值。查詢失敗回傳None（呼叫端退回LIVE_CAPITAL）"""
@@ -859,8 +877,11 @@ def _execute_buy(df, latest, portfolio, price, bb_upper, bb_lower, recent_low,
                    f"，為防重複下單已攔截本次進場，請人工核對帳本與交易所")
             print(f"  🚫 已持有 {real_qty:.6f} {ASSET}，攔截重複買入")
             return
-        equity = _live_total_equity()
-        bankroll = round(equity * POOL_FRACTION, 2) if equity else LIVE_CAPITAL
+        if USE_POOL_SIZING:
+            equity = _live_total_equity()
+            bankroll = round(equity * POOL_FRACTION, 2) if equity else LIVE_CAPITAL
+        else:
+            bankroll = LIVE_CAPITAL
         if not _live_check_balance(bankroll):
             print("  ❌ 餘額不足，取消本次進場")
             return
