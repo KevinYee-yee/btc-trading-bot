@@ -1,0 +1,18 @@
+{
+  "capital": 0.0,
+  "position": 0.011697616323263701,
+  "entry_price": 85402.1,
+  "entry_time": "2026-09-22 00:00:00+00:00",
+  "last_candle": "2026-09-22 00:00:00+00:00",
+  "total_trades": 0,
+  "wins": 0,
+  "losses": 0,
+  "total_pnl": 0.0,
+  "last_exit_candle": "",
+  "consecutive_losses": 0,
+  "live_bankroll_at_entry": 15.0,
+  "live_algo_id": "3944436134236270592",
+  "live_stop_px": 84121.07,
+  "struct_stop": 79732.733,
+  "peak_price": 85402.1
+}
