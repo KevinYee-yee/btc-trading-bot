@@ -1,8 +1,8 @@
-name: 🟡 DOGE 均值回歸（紙上模擬）
+name: 🟠 BTC 均值回歸（紙上模擬）
 
 on:
   schedule:
-    - cron: "11,21,31,41,51 * * * *"
+    - cron: "13,23,33,43,53 * * * *"
   workflow_dispatch:
     inputs:
       force_test:
@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    if: ${{ vars.PAPER_MEANREV_DOGE != 'off' }}
+    if: ${{ vars.PAPER_MEANREV_BTC != 'off' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -28,13 +28,12 @@ jobs:
           python-version: "3.11"
       - run: pip install ccxt pandas numpy
 
-      - name: Run DOGE Mean Reversion (PAPER)
+      - name: Run BTC Mean Reversion (PAPER)
         id: trade
         env:
           STRATEGY:         MR
-          SYMBOL:           DOGE/USDT
+          SYMBOL:           BTC/USDT
           TIMEFRAME:        4h
-          MR_MIN_RR:        "3.0"
           LIVE_TRADE:       "false"
           TELEGRAM_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -46,9 +45,11 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add paper_portfolio_doge_mr.json 2>/dev/null || true
-          git add paper_trade_log_doge_mr.csv 2>/dev/null || true
-          git diff --cached --quiet || git commit -m "🟡PAPER DOGE-MR $(date -u '+%Y-%m-%d %H:%M UTC') 更新"
+          # 注意：BTC沿用monitor.py的舊命名慣例(ASSET==BTC時STRAT_KEY不加前綴)，
+          # 檔名是裸的 paper_portfolio_mr.json，不是paper_portfolio_btc_mr.json
+          git add paper_portfolio_mr.json 2>/dev/null || true
+          git add paper_trade_log_mr.csv 2>/dev/null || true
+          git diff --cached --quiet || git commit -m "🟠PAPER BTC-MR $(date -u '+%Y-%m-%d %H:%M UTC') 更新"
           for i in 1 2 3 4 5; do
             git pull --rebase -X theirs origin main || { git rebase --abort 2>/dev/null || true; sleep 2; continue; }
             if git push; then exit 0; fi

@@ -50,6 +50,10 @@ RSI_SELL_MR     = float(os.environ.get("RSI_SELL_MR", "60"))
 EMA_TREND_MR    = int(os.environ.get("EMA_TREND_MR", "100"))
 MR_SWING_LOOKBACK = int(os.environ.get("MR_SWING_LOOKBACK", "20"))  # 結構停損：往前找幾根K棒的低點
 MR_STOP_BUFFER  = float(os.environ.get("MR_STOP_BUFFER", "0.5"))    # 停損放在波段低點再往下留的緩衝%
+# 賺賠比篩選（2026-09-22，DOGE專用實驗，非通用機制——全市場測過，NEAR/BTC加了反而變差，
+# 只有DOGE穩定變好(3段walk-forward全正)）：停利目標=前波高點，進場前算(目標-進場)/(進場-停損)，
+# 不足MR_MIN_RR就跳過這次訊號。預設0=關閉，維持NEAR/BTC原本「RSI回歸就出場」的行為不變
+MR_MIN_RR       = float(os.environ.get("MR_MIN_RR", "0"))
 
 # 策略唯一鍵（含標的前綴）：BTC 沿用裸鍵，其餘幣種 = 幣名_策略
 ASSET = SYMBOL.split("/")[0] if "/" in SYMBOL else "BTC"
@@ -585,6 +589,15 @@ def get_entry_signal(df, latest):
         ok = oversold and not_collapsing
         c1 = f"RSI(14) {rsi14:.1f}{'✅' if oversold else '❌'}<{RSI_BUY_MR:.0f}"
         c2 = f"EMA{EMA_TREND_MR}緩衝{'✅' if not_collapsing else '❌跌破緩衝'}"
+        if ok and MR_MIN_RR > 0:
+            price = latest["close"]
+            swing_low  = df["low"].iloc[-(MR_SWING_LOOKBACK + 2):-2].min()
+            swing_high = df["high"].iloc[-(MR_SWING_LOOKBACK + 2):-2].max()
+            risk   = price - swing_low * (1 - MR_STOP_BUFFER / 100)
+            reward = swing_high - price
+            rr = reward / risk if risk > 0 else 0
+            if rr < MR_MIN_RR:
+                return False, c1, c2 + f" 但賺賠比{rr:.1f}<{MR_MIN_RR:.1f}❌跳過"
         return ok, c1, c2
 
     return False, "—", "—"
@@ -619,6 +632,9 @@ def get_exit_reason(df, latest, portfolio):
         struct_stop = portfolio.get("struct_stop", entry_price * 0.95)
         if price < struct_stop:
             return f"結構停損（跌破前波低點 ${struct_stop:,.4f}）"
+        mr_target = portfolio.get("mr_target", 0)
+        if mr_target and latest["high"] >= mr_target:
+            return f"達到停利目標（前波高點 ${mr_target:,.4f}）"
         rsi14 = latest["rsi14"]
         if rsi14 > RSI_SELL_MR:
             return f"RSI(14)>{RSI_SELL_MR:.0f}均值回歸出場"
@@ -869,6 +885,10 @@ def _execute_buy(df, latest, portfolio, price, bb_upper, bb_lower, recent_low,
         # 不是死板固定%——跟趨勢腿T的STOP_PCT完全獨立的欄位(struct_stop)，互不影響
         swing_low = df["low"].iloc[-(MR_SWING_LOOKBACK + 2):-2].min()
         portfolio["struct_stop"] = round(swing_low * (1 - MR_STOP_BUFFER / 100), 6)
+        if MR_MIN_RR > 0:
+            # 賺賠比篩選開啟時（目前僅DOGE），停利目標=前波高點，達標主動停利
+            swing_high = df["high"].iloc[-(MR_SWING_LOOKBACK + 2):-2].max()
+            portfolio["mr_target"] = round(swing_high, 6)
 
     qty = portfolio["capital"] / price / (1 + COMMISSION)
     portfolio["position"]    = qty
@@ -930,6 +950,7 @@ def _execute_sell(df, latest, portfolio, price, bb_upper, bb_lower, reason, now_
     portfolio["peak_price"]      = 0.0
     portfolio["live_stop_px"]    = 0.0
     portfolio["struct_stop"]     = 0.0
+    portfolio["mr_target"]       = 0.0
     portfolio["last_candle"]     = str(latest.name)
     portfolio["last_exit_candle"] = str(latest.name)  # P1：記錄出場K線供冷卻期用
     portfolio["total_trades"]   += 1
