@@ -1,13 +1,16 @@
 {
-  "capital": 1000.0,
-  "position": 0.0,
-  "entry_price": 0.0,
-  "entry_time": "",
-  "last_candle": "2026-09-27 20:00:00+00:00",
+  "capital": 0.0,
+  "position": 10619.76186883171,
+  "entry_price": 0.09407,
+  "entry_time": "2026-09-28 00:00:00+00:00",
+  "last_candle": "2026-09-28 00:00:00+00:00",
   "total_trades": 0,
   "wins": 0,
   "losses": 0,
   "total_pnl": 0.0,
   "last_exit_candle": "",
-  "consecutive_losses": 0
+  "consecutive_losses": 0,
+  "struct_stop": 0.094047,
+  "mr_target": 0.09982,
+  "peak_price": 0.09407
 }
