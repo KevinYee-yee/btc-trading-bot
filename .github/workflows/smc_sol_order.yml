@@ -1,0 +1,52 @@
+name: 🌙 SOL 夜間單（手動觸發·現貨實盤）
+
+# 只能手動/本機監控程式觸發，不排程。跟其他 live_* 策略完全獨立，不寫任何帳本檔。
+# 關閉方式：gh variable set SMC_SOL_NIGHT -b off
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'precheck / buy / sell'
+        required: true
+        default: 'precheck'
+      usdt:
+        description: '買入金額 USDT（15~50）'
+        required: false
+        default: ''
+      sl:
+        description: '停損價'
+        required: false
+        default: ''
+      tp:
+        description: '止盈價'
+        required: false
+        default: ''
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  order:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    if: ${{ vars.SMC_SOL_NIGHT == 'on' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install ccxt
+      - name: Run
+        env:
+          ACTION:           ${{ github.event.inputs.action }}
+          USDT_AMT:         ${{ github.event.inputs.usdt }}
+          SL:               ${{ github.event.inputs.sl }}
+          TP:               ${{ github.event.inputs.tp }}
+          OKX_API_KEY:      ${{ secrets.OKX_API_KEY }}
+          OKX_SECRET:       ${{ secrets.OKX_SECRET }}
+          OKX_PASSPHRASE:   ${{ secrets.OKX_PASSPHRASE }}
+          TELEGRAM_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python smc_sol_order.py
