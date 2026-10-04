@@ -28,12 +28,21 @@ NOW      = datetime.now(timezone.utc)
 STRATS = [
     ("ZEC 趨勢",   "live_zec_t1.yml",       "LIVE_ZEC_T1",       "live_portfolio_zec_t.json",    "ZEC",  60),
     ("HYPE 趨勢",  "live_hype_t1.yml",      "LIVE_HYPE_T1",      "live_portfolio_hype_t.json",   "HYPE", 60),
-    ("DOGE 均值",  "live_meanrev_doge.yml", "LIVE_MEANREV_DOGE", "live_portfolio_doge_mr.json",  "DOGE", 300),
-    ("BTC 均值",   "live_meanrev_btc.yml",  "LIVE_MEANREV_BTC",  "live_portfolio_mr.json",       "BTC",  300),
-    ("NEAR 均值",  "live_meanrev_near.yml", "LIVE_MEANREV_NEAR", "live_portfolio_near_mr.json",  "NEAR", 300),
+    ("DOGE 均值",  "live_meanrev_doge.yml", "LIVE_MEANREV_DOGE", "live_portfolio_doge_mr.json",  "DOGE", 120),
+    ("BTC 均值",   "live_meanrev_btc.yml",  "LIVE_MEANREV_BTC",  "live_portfolio_mr.json",       "BTC",  120),
+    ("NEAR 均值",  "live_meanrev_near.yml", "LIVE_MEANREV_NEAR", "live_portfolio_near_mr.json",  "NEAR", 120),
     ("SOL_B",      "live_sol_b.yml",        "LIVE_SOL_B",        "live_portfolio_sol_b.json",    "SOL",  60),
 ]
 GAS_MAX_SILENCE_MIN = 40   # 超過這麼久沒有任何 workflow_dispatch 觸發 → GAS 派送器可能掛了
+
+# 代為派送（2026-10-04 v2.1）：DOGE/BTC/NEAR 只靠 GitHub 原生排程，實測被節流到 5~6 小時才跑一次。
+# 看門狗本身每 10 分鐘被 GAS 派送，就順手幫它們派送（GITHUB_TOKEN 觸發 workflow_dispatch 是官方允許的例外）。
+RELAY = {"live_meanrev_doge.yml", "live_meanrev_btc.yml", "live_meanrev_near.yml"}
+RELAY_AFTER_MIN = 25       # 距上次執行超過這麼久才補派，避免跟原生排程擠在一起
+
+# 同一個問題的重複告警間隔：問題持續時每 60 分鐘提醒一次，不再每 10 分鐘洗版
+REPEAT_MIN = 60
+STATE_FILE = "watchdog_state.json"
 
 
 def gh(path):
@@ -59,12 +68,19 @@ def fmt_min(m):
     return f"{m} 分鐘" if m < 120 else (f"{m/60:.1f} 小時" if m < 2880 else f"{m/1440:.1f} 天")
 
 
+def gh_post(path, body):
+    req = urllib.request.Request(f"https://api.github.com/repos/{REPO}{path}", data=json.dumps(body).encode(),
+                                 method="POST", headers={"Authorization": f"Bearer {GH_TOKEN}",
+                                                         "Accept": "application/vnd.github+json"})
+    urllib.request.urlopen(req, timeout=20)
+
+
 def check_runs(wf, max_age):
-    """回傳 (問題list, 狀態文字, 最後一次dispatch距今分鐘)"""
+    """回傳 (問題list, 狀態文字, 最後一次dispatch距今分鐘, 最後執行距今分鐘, 是否執行中)"""
     runs = gh(f"/actions/workflows/{wf}/runs?per_page=15").get("workflow_runs", [])
     real = [r for r in runs if r.get("conclusion") != "skipped"]
     if not real:
-        return [f"從未執行過"], "從未執行", None
+        return [f"從未執行過"], "從未執行", None, 10**6, False
     last = real[0]
     age = ago(last["created_at"])
     probs = []
@@ -82,7 +98,8 @@ def check_runs(wf, max_age):
         probs.append(f"連續 {fails} 次執行失敗：{last['html_url']}")
     disp = [r for r in runs if r.get("event") == "workflow_dispatch"]
     disp_age = ago(disp[0]["created_at"]) if disp else None
-    return probs, f"{fmt_min(age)}前執行", disp_age
+    busy = any(r.get("status") in ("queued", "in_progress") for r in runs[:3])
+    return probs, f"{fmt_min(age)}前執行", disp_age, age, busy
 
 
 def load_portfolio(path):
@@ -126,9 +143,17 @@ def main():
             lines.append(f"⚪ {name}：關閉")
             continue
         try:
-            probs, state, disp_age = check_runs(wf, max_age)
+            probs, state, disp_age, age, busy = check_runs(wf, max_age)
         except Exception as e:
-            probs, state, disp_age = [f"GitHub API 查詢失敗：{e}"], "查詢失敗", None
+            probs, state, disp_age, age, busy = [f"GitHub API 查詢失敗：{e}"], "查詢失敗", None, 0, True
+        if wf in RELAY and age >= RELAY_AFTER_MIN and not busy:
+            try:
+                gh_post(f"/actions/workflows/{wf}/dispatches", {"ref": "main"})
+                state += "（已代為派送）"
+                # 補派成功就算處理了，不再報「太久沒執行」；真跑不起來會在下一輪以「連續失敗」或「卡住」現形
+                probs = [p for p in probs if "沒執行" not in p]
+            except Exception as e:
+                probs.append(f"代為派送失敗：{e}")
         if wf in ("live_zec_t1.yml", "live_hype_t1.yml"):
             gas_ages.append(disp_age if disp_age is not None else 10**6)
 
@@ -174,9 +199,22 @@ def main():
     if exch_err:
         problems.append(exch_err)
 
+    # 去重：同一問題（去掉數字後的文字）60 分鐘內只提醒一次；問題消失就清掉
+    import re
+    try:
+        state = json.load(open(STATE_FILE))
+    except Exception:
+        state = {}
+    keyed = {re.sub(r"[\d.]+", "#", p): p for p in problems}
+    due = [p for k, p in keyed.items()
+           if k not in state or ago(state[k]) >= REPEAT_MIN]
+    new_state = {k: (state[k] if k in state and ago(state[k]) < REPEAT_MIN else NOW.isoformat().replace("+00:00", "Z"))
+                 for k in keyed}
+    json.dump(new_state, open(STATE_FILE, "w"))
+
     stamp = NOW.astimezone(TW).strftime("%m/%d %H:%M")
-    if problems:
-        tg(f"🚨【實盤看門狗】{stamp} 發現 {len(problems)} 個問題\n\n" + "\n".join("• " + p for p in problems)
+    if problems and (due or MODE == "daily"):
+        tg(f"🚨【實盤看門狗】{stamp} 發現 {len(problems)} 個問題（同一問題每 {REPEAT_MIN} 分鐘提醒一次）\n\n" + "\n".join("• " + p for p in problems)
            + "\n\n—— 全部狀態 ——\n" + "\n".join(lines))
     elif MODE == "daily":
         usdt = f"\n💵 主帳戶 USDT：{bal.get('USDT', 0):.2f}" if bal else ""

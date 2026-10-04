@@ -22,13 +22,20 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      actions: read
+      actions: write   # v2.1：代為派送 DOGE/BTC/NEAR 均值策略
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
       - run: pip install ccxt
+
+      - name: 讀取上次告警紀錄（去重用）
+        uses: actions/cache/restore@v4
+        with:
+          path: watchdog_state.json
+          key: wd-state-${{ github.run_id }}
+          restore-keys: wd-state-
 
       - name: 巡檢
         env:
@@ -47,6 +54,13 @@ jobs:
           LIVE_MEANREV_NEAR: ${{ vars.LIVE_MEANREV_NEAR }}
           LIVE_SOL_B:        ${{ vars.LIVE_SOL_B }}
         run: python watchdog.py
+
+      - name: 保存告警紀錄
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: watchdog_state.json
+          key: wd-state-${{ github.run_id }}
 
       - name: 看門狗本身出錯
         if: failure()
