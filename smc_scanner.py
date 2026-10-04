@@ -12,8 +12,9 @@ Kevin 手動做 SMC，卡在「找標的」：每次從零翻 8 張圖，大多�
 import os, json, urllib.request, urllib.parse
 from datetime import datetime, timezone, timedelta
 
-WATCHLIST = [s.strip() for s in os.environ.get(
-    "SCAN_LIST", "BTC,ETH,SOL,ZEC,HYPE,OKB,DOGE,XTSLA").split(",") if s.strip()]
+# 注意：workflow 傳進來的未設定變數是「空字串」而不是不存在，所以要用 or 退回預設（10/05 首推空白的 bug）
+WATCHLIST = [s.strip() for s in (os.environ.get("SCAN_LIST") or
+             "BTC,ETH,SOL,ZEC,HYPE,OKB,DOGE,XTSLA").split(",") if s.strip()]
 TG_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 TG_CHAT  = os.environ.get("TELEGRAM_CHAT_ID", "")
 STATE    = "scanner_state.json"
@@ -192,6 +193,8 @@ def main():
             rows.append(scan(s))
         except Exception as e:
             rows.append(dict(sym=s, status="⚠️", note=f"資料讀取失敗：{e}", px=0, bias=""))
+    if not rows:
+        raise SystemExit("觀察清單是空的，不推播（請檢查 SCAN_LIST）")
     order = {"✅": 0, "⚠️": 1, "⏳": 2, "❌": 3}
     rows.sort(key=lambda r: order.get(r["status"], 9))
     stamp = now.astimezone(TW).strftime("%m/%d %H:%M")
