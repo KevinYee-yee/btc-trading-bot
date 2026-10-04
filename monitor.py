@@ -197,6 +197,32 @@ def _macro_regime_ok():
         print(f"  ⚠️ 大盤總閘資料取得失敗，本次放行：{e}")
         return True, "macro-gate-error"
 
+def _perf_track(portfolio, pnl_pct, real_usd):
+    """實盤績效追蹤（2026-10-04）：每筆出場累計真實USDT損益、勝率、最大連敗，附在出場通知；
+    見習期滿 PROBATION_TRADES 筆時發一次結業判定（只通知，不自動加碼，加碼由人決定）"""
+    pf = portfolio.setdefault("perf", {"since": datetime.now(timezone(timedelta(hours=8))).strftime("%m/%d"),
+                                       "trades": 0, "wins": 0, "usd": 0.0, "pct_sum": 0.0,
+                                       "consec_loss": 0, "max_consec_loss": 0})
+    pf["trades"] += 1
+    if pnl_pct > 0:
+        pf["wins"] += 1
+        pf["consec_loss"] = 0
+    else:
+        pf["consec_loss"] += 1
+    pf["max_consec_loss"] = max(pf["max_consec_loss"], pf["consec_loss"])
+    pf["usd"]     = round(pf["usd"] + real_usd, 4)
+    pf["pct_sum"] = round(pf["pct_sum"] + pnl_pct, 3)
+    line = (f"📊 實盤累計（{pf['since']}起）：{pf['trades']}筆｜勝率{pf['wins']/pf['trades']*100:.0f}%｜"
+            f"{pf['usd']:+.2f} USDT（{pf['pct_sum']:+.1f}%）｜最大連敗{pf['max_consec_loss']}")
+    if PROBATION_TRADES > 0:
+        if pf["trades"] < PROBATION_TRADES:
+            line += f"\n🎓 見習進度 {pf['trades']}/{PROBATION_TRADES}"
+        elif pf["trades"] == PROBATION_TRADES:
+            ok = pf["pct_sum"] > 0 and pf["max_consec_loss"] <= 4
+            line += ("\n🎓 見習期結業：" + ("✅ 達標（累計為正、最大連敗≤4），可考慮把本金調高一級" if ok
+                     else "❌ 未達標，建議維持小額或停用") + "——不會自動加碼，請手動決定")
+    return line
+
 def _risk_check_after_sell(portfolio, pnl_pct):
     """實盤風控三件套（外部審查團 P0）：
     ①峰值回撤≤-10% → 停機7天冷靜期 ②滾動10筆淨損≤-4% → 熔斷48h ③單日≤-3% → 當日停單"""
@@ -418,12 +444,14 @@ def _live_sync_position(portfolio):
             portfolio["live_algo_id"]       = ""
             portfolio["last_exit_was_stop"] = True
             _risk_check_after_sell(portfolio, pnl_pct)
+            real_usd  = pnl_pct / 100 * portfolio.get("live_bankroll_at_entry", LIVE_CAPITAL)
+            perf_line = _perf_track(portfolio, pnl_pct, real_usd)
             log_trade("SELL", stop_px, json_qty, pnl_pct, "交易所止損觸發", portfolio)
             save_portfolio(portfolio)
             notify(f"🔴 【實盤】出場｜{STRATEGY_LABEL.get(STRAT_KEY)}\n"
                    f"進場：${entry:,.2f} → 止損：${stop_px:,.2f}\n"
-                   f"損益：{pnl_pct:+.2f}%\n"
-                   f"原因：交易所止損單觸發（毫秒級保護）")
+                   f"損益：{pnl_pct:+.2f}%（{real_usd:+.2f} USDT）\n"
+                   f"原因：交易所止損單觸發（毫秒級保護）\n{perf_line}")
         else:
             notify(f"⚠️ [{STRAT_KEY}] 不一致：JSON 有持倉但交易所無 {ASSET}，自動重置 JSON 為空倉")
             portfolio["position"]    = 0.0
@@ -999,6 +1027,7 @@ def _execute_sell(df, latest, portfolio, price, bb_upper, bb_lower, reason, now_
     real_pnl_dollars  = pnl_pct / 100 * bankroll_used if LIVE_TRADE else pnl
 
     _risk_check_after_sell(portfolio, pnl_pct)
+    perf_line = ("\n" + _perf_track(portfolio, pnl_pct, real_pnl_dollars)) if LIVE_TRADE else ""
     log_trade("SELL", price, qty, pnl_pct, reason, portfolio)
     save_portfolio(portfolio)
     sheets_post({"type":"trade","time":now_time,"action":"SELL","price":str(price),
@@ -1009,7 +1038,7 @@ def _execute_sell(df, latest, portfolio, price, bb_upper, bb_lower, reason, now_
     notify(f"{icon}{live_tag} 出場｜{STRATEGY_LABEL.get(STRAT_KEY)}\n"
            f"進場：${entry_price:,.2f} → 出場：${price:,.2f}\n"
            f"損益：{pnl_pct:+.2f}%（{real_pnl_dollars:+.2f} USDT{'，實盤' if LIVE_TRADE else '，模擬'}）\n"
-           f"原因：{reason}")
+           f"原因：{reason}{perf_line}")
     print(f"  {icon} 賣出 @ ${price:,.2f}  損益：{pnl_pct:+.2f}%  原因：{reason}")
 
 
