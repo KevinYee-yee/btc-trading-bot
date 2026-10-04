@@ -1,38 +1,56 @@
-name: 🐕 實盤看門狗（排程停擺告警）
+name: 🐕 實盤看門狗 v2（停擺／失敗／對帳／日報）
 
+# v2（2026-10-04）：自己走 GitHub 原生排程，不再只靠 GAS 派送——
+# 10/01 GAS token 到期時，舊看門狗跟 ZEC/HYPE 一起停擺，三天沒人知道。
 on:
+  schedule:
+    - cron: "5,35 * * * *"    # 告警巡檢（GitHub 會節流，實際約 1~3 小時一次）
+    - cron: "2 1 * * *"       # 每天 01:02 UTC = 台灣 09:02 日報
   workflow_dispatch:
+    inputs:
+      mode:
+        description: 'alert（有問題才發）/ daily（一律發日報）'
+        required: false
+        default: 'alert'
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
 
 jobs:
   watchdog:
     runs-on: ubuntu-latest
-    # 只在實盤開啟時監控
-    if: ${{ vars.LIVE_SOL_B == 'on' || vars.LIVE_HYPE_T1 == 'on' || vars.LIVE_ZEC_T1 == 'on' }}
-
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install ccxt
 
-      - name: 檢查心跳是否停擺
+      - name: 巡檢
         env:
-          TG_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
-          TG_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          MODE:              ${{ github.event.schedule == '2 1 * * *' && 'daily' || github.event.inputs.mode || 'alert' }}
+          GH_TOKEN:          ${{ secrets.GITHUB_TOKEN }}
+          TG_TOKEN:          ${{ secrets.TELEGRAM_TOKEN }}
+          TG_CHAT_ID:        ${{ secrets.TELEGRAM_CHAT_ID }}
+          OKX_API_KEY:       ${{ secrets.OKX_API_KEY }}
+          OKX_SECRET:        ${{ secrets.OKX_SECRET }}
+          OKX_PASSPHRASE:    ${{ secrets.OKX_PASSPHRASE }}
+          GAS_TOKEN_EXPIRES: ${{ vars.GAS_TOKEN_EXPIRES }}
+          LIVE_ZEC_T1:       ${{ vars.LIVE_ZEC_T1 }}
+          LIVE_HYPE_T1:      ${{ vars.LIVE_HYPE_T1 }}
+          LIVE_MEANREV_DOGE: ${{ vars.LIVE_MEANREV_DOGE }}
+          LIVE_MEANREV_BTC:  ${{ vars.LIVE_MEANREV_BTC }}
+          LIVE_MEANREV_NEAR: ${{ vars.LIVE_MEANREV_NEAR }}
+          LIVE_SOL_B:        ${{ vars.LIVE_SOL_B }}
+        run: python watchdog.py
+
+      - name: 看門狗本身出錯
+        if: failure()
         run: |
-          ALERT=""
-          if [ ! -f live_heartbeat.txt ]; then
-            ALERT="🚨【看門狗】實盤 SOL_B 已開啟（LIVE_SOL_B=on）但從未產生心跳，排程可能沒在跑！"
-          else
-            LAST=$(cat live_heartbeat.txt)
-            LAST_TS=$(date -u -d "$LAST" +%s)
-            NOW_TS=$(date -u +%s)
-            AGE=$(( (NOW_TS - LAST_TS) / 60 ))
-            echo "最後心跳：$LAST（$AGE 分鐘前）"
-            if [ "$AGE" -gt 45 ]; then
-              ALERT="🚨【看門狗】實盤 SOL_B 心跳已停擺 $AGE 分鐘（正常應 ≤10 分鐘）！排程可能故障，請檢查 GitHub Actions。"
-            fi
-          fi
-          if [ -n "$ALERT" ]; then
-            curl -s -X POST "https://api.telegram.org/bot$TG_TOKEN/sendMessage" \
-              -d chat_id="$TG_CHAT_ID" -d text="$ALERT"
-            exit 1
-          fi
-          echo "✅ 心跳正常"
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="⚠️【看門狗】巡檢程式本身執行失敗，請通知 Claude 檢查：https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"

@@ -1,6 +1,10 @@
 name: 🔴 HYPE 趨勢腿T1 實盤 OKX
 
 on:
+  # 備援排程（2026-10-04）：主力仍是 GAS 每10分鐘派送；GAS 掛掉時至少還有 GitHub 原生排程（會被節流成約1~3小時一次）
+  # 同一根K線重複執行會被 monitor.py 的 last_candle 防重機制擋下，concurrency 也會排隊，不會重複下單
+  schedule:
+    - cron: "4,14,24,34,44,54 * * * *"
   workflow_dispatch:
     inputs:
       force_test:
