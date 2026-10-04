@@ -1,0 +1,49 @@
+name: 📍 SMC 標的掃描（只推播不下單）
+
+# 每根 4H K 棒收盤後推一次 Telegram。GitHub 原生排程會被節流，
+# 所以看門狗（GAS 每 10 分鐘派送）也會順手補派；同一根 4H 只推一次（cache 記錄）。
+# 關閉：gh variable set SMC_SCANNER -b off；改觀察清單：gh variable set SCAN_LIST -b "BTC,ETH,..."
+on:
+  schedule:
+    - cron: "6 0,4,8,12,16,20 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: '強制重推（true / 留空）'
+        required: false
+        default: ''
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    if: ${{ vars.SMC_SCANNER != 'off' }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 讀取上次推播紀錄
+        uses: actions/cache/restore@v4
+        with:
+          path: scanner_state.json
+          key: scan-state-${{ github.run_id }}
+          restore-keys: scan-state-
+      - name: 掃描
+        env:
+          TELEGRAM_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SCAN_LIST:        ${{ vars.SCAN_LIST }}
+          FORCE:            ${{ github.event.inputs.force }}
+        run: python smc_scanner.py
+      - name: 保存推播紀錄
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: scanner_state.json
+          key: scan-state-${{ github.run_id }}

@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      actions: write   # v2.1：代為派送 DOGE/BTC/NEAR 均值策略
+      actions: write   # v2.1：代為派送 DOGE/BTC/NEAR 均值策略＋SMC 掃描器
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -53,6 +53,7 @@ jobs:
           LIVE_MEANREV_BTC:  ${{ vars.LIVE_MEANREV_BTC }}
           LIVE_MEANREV_NEAR: ${{ vars.LIVE_MEANREV_NEAR }}
           LIVE_SOL_B:        ${{ vars.LIVE_SOL_B }}
+          SMC_SCANNER:       ${{ vars.SMC_SCANNER }}
         run: python watchdog.py
 
       - name: 保存告警紀錄

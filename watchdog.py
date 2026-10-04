@@ -182,6 +182,15 @@ def main():
         for p in probs:
             problems.append(f"【{name}】{p}")
 
+    # 順手補派 SMC 掃描器（它自己會判斷這根 4H 推過沒，重複派送只是空跑）
+    if os.environ.get("SMC_SCANNER", "") != "off":
+        try:
+            _, _, _, s_age, s_busy = check_runs("smc_scanner.yml", 10**6)
+            if s_age >= RELAY_AFTER_MIN and not s_busy:
+                gh_post("/actions/workflows/smc_scanner.yml/dispatches", {"ref": "main"})
+        except Exception as e:
+            print(f"  ⚠️ 補派掃描器失敗：{e}")
+
     if gas_ages and min(gas_ages) > GAS_MAX_SILENCE_MIN:
         m = min(gas_ages)
         problems.insert(0, "【GAS 派送器】" + (f"已 {fmt_min(m)} 沒有派送" if m < 10**6 else "近期完全沒有派送紀錄")
