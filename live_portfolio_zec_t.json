@@ -3,7 +3,7 @@
   "position": 0.0,
   "entry_price": 0.0,
   "entry_time": "",
-  "last_candle": "2026-10-05 20:00:00+00:00",
+  "last_candle": "2026-10-06 00:00:00+00:00",
   "total_trades": 12,
   "wins": 3,
   "losses": 9,
@@ -30,5 +30,5 @@
   "day_pnl": -8.184,
   "peak_capital": 2007.337495149766,
   "halt_until": "2026-10-01T09:33:12.775876+00:00",
-  "live_bankroll_at_entry": 73.44
+  "live_bankroll_at_entry": 73.1
 }
