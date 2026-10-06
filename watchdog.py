@@ -175,7 +175,18 @@ def main():
                     pass
         halt = pf.get("halt_until", "")
         halt_txt = f"｜🛑停機至{halt[5:16]}" if halt and halt > NOW.isoformat() else ""
-        pos_txt = f"持倉 {pos:.4g}@{pf.get('entry_price')}" + (f"｜止損 {stops.get(coin)}" if stops.get(coin) else "") if pos > 0 else "空手"
+        # 帳本的 position 是模擬本金($1000)換算的數量，不是真實持幣；有讀到交易所就顯示真實數量與市值
+        real = bal.get(coin, 0) if bal else 0
+        if pos > 0:
+            try:
+                val = real * float(ex.fetch_ticker(f"{coin}/USDT")["last"]) if (ex and real) else 0
+            except Exception:
+                val = 0
+            qty_txt = f"{real:.4g} {coin}（約 ${val:.0f}）" if real else f"帳本{pos:.4g}"
+            stop_txt = "/".join(str(x) for x in stops.get(coin, [])) or "無"
+            pos_txt = f"持倉 {qty_txt}，成本 {pf.get('entry_price')}｜止損 {stop_txt}"
+        else:
+            pos_txt = "空手"
         perf_txt = f"｜累計 {perf.get('trades',0)}筆 {perf.get('usd',0):+.2f}U" if perf else f"｜歷史 {pf.get('total_trades',0)}筆"
         icon = "🔴" if probs else "🟢"
         lines.append(f"{icon} {name}：{state}｜{pos_txt}{halt_txt}{perf_txt}")
