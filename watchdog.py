@@ -217,8 +217,19 @@ def main():
     keyed = {re.sub(r"[\d.]+", "#", p): p for p in problems}
     due = [p for k, p in keyed.items()
            if k not in state or ago(state[k]) >= REPEAT_MIN]
-    new_state = {k: (state[k] if k in state and ago(state[k]) < REPEAT_MIN else NOW.isoformat().replace("+00:00", "Z"))
+    state_probs = {k: v for k, v in state.items() if not k.startswith("_")}
+    new_state = {k: (state_probs[k] if k in state_probs and ago(state_probs[k]) < REPEAT_MIN else NOW.isoformat().replace("+00:00", "Z"))
                  for k in keyed}
+
+    # 日報：台灣 09:00 之後第一次巡檢就發（GitHub 的固定時間排程實測會被吞掉，改用時間＋紀錄判斷）
+    global MODE
+    today = NOW.astimezone(TW).strftime("%Y-%m-%d")
+    if MODE != "daily" and NOW.astimezone(TW).hour >= 9 and state.get("_daily") != today:
+        MODE = "daily"
+    if MODE == "daily":
+        new_state["_daily"] = today
+    elif "_daily" in state:
+        new_state["_daily"] = state["_daily"]
     json.dump(new_state, open(STATE_FILE, "w"))
 
     stamp = NOW.astimezone(TW).strftime("%m/%d %H:%M")

@@ -273,13 +273,20 @@ def check_emergency_stop():
         return True
     return False
 
+def _live_usdt_free():
+    try:
+        return float(live_exchange.fetch_balance().get("USDT", {}).get("free", 0))
+    except Exception as e:
+        print(f"  ⚠️ 查詢可用 USDT 失敗：{e}")
+        return None
+
 def _live_check_balance(need=None):
     """缺口4：進場前確認 OKX USDT 餘額 >= 本次實際下注金額（need，預設LIVE_CAPITAL）"""
     need = LIVE_CAPITAL if need is None else need
     try:
         bal = live_exchange.fetch_balance()
         usdt_free = float(bal.get("USDT", {}).get("free", 0))
-        if usdt_free < need * 0.95:
+        if usdt_free < need:   # 原本 need*0.95 會放行「差一點點」的單，送出後被交易所 51008 拒絕
             notify(f"⚠️ [{STRAT_KEY}] USDT 餘額不足：帳戶 {usdt_free:.2f} < 需要 {need:.2f}")
             return False
         return True
@@ -292,6 +299,10 @@ def _live_check_balance(need=None):
 # 拿其中的 POOL_FRACTION（預設一半）當這一筆的本金。哪個策略先進場就先分走那一半，
 # 天然讓「總曝險不超過現有總資產」，不需要額外的回撤上限。
 POOL_FRACTION = float(os.environ.get("POOL_FRACTION", "0.5"))
+# 均值策略保留款（2026-10-06）：DOGE $15 + BTC $15 + NEAR $10 用同一個帳戶的 USDT，
+# 不扣掉的話 ZEC/HYPE 的「總資產一半」會把它們的錢也算進去分走。
+POOL_RESERVE  = float(os.environ.get("POOL_RESERVE", "40"))
+POOL_MIN_BET  = 10.0   # 扣完保留款若不到這個數就不進場（避免下出零頭單）
 POOL_ASSETS   = ["ZEC", "HYPE"]  # 目前有實盤資金的標的，總資產查詢時一併估值
 # 見習期策略（2026-09-22，DOGE/BTC均值回歸首次上真錢）不吃資金池，用獨立固定小額本金，
 # 虧光也不影響ZEC/HYPE主力：USE_POOL_SIZING=false時直接用LIVE_CAPITAL
@@ -918,7 +929,15 @@ def _execute_buy(df, latest, portfolio, price, bb_upper, bb_lower, recent_low,
             return
         if USE_POOL_SIZING:
             equity = _live_total_equity()
-            bankroll = round(equity * POOL_FRACTION, 2) if equity else LIVE_CAPITAL
+            bankroll = round(max(equity - POOL_RESERVE, 0) * POOL_FRACTION, 2) if equity else LIVE_CAPITAL
+            # 上限＝可用 USDT 扣保留款再留 2% 手續費空間（10/06 ZEC 51008：總資產一半 72 > 可用 71，95% 檢查放行後被交易所拒單）
+            free = _live_usdt_free()
+            if free is not None:
+                bankroll = min(bankroll, round((free - POOL_RESERVE) * 0.98, 2))
+            if bankroll < POOL_MIN_BET:
+                notify(f"⏸ [{STRAT_KEY}] 有進場訊號，但扣掉均值策略保留款 ${POOL_RESERVE:.0f} 後可用不到 ${POOL_MIN_BET:.0f}（可用 USDT {free}），本次不進場")
+                print("  ⏸ 可用資金不足最低下注，取消本次進場")
+                return
         else:
             bankroll = LIVE_CAPITAL
         if not _live_check_balance(bankroll):
