@@ -1,27 +1,37 @@
 {
-  "capital": 0.0,
-  "position": 0.011900682242342028,
-  "entry_price": 84014.9,
-  "entry_time": "2026-10-07 04:00:00+00:00",
+  "capital": 988.6617358999744,
+  "position": 0.0,
+  "entry_price": 0.0,
+  "entry_time": "",
   "last_candle": "2026-10-07 08:00:00+00:00",
-  "total_trades": 2,
+  "total_trades": 3,
   "wins": 1,
-  "losses": 1,
-  "total_pnl": 0.8344631506632822,
-  "last_exit_candle": "2026-09-27 20:00:00+00:00",
-  "consecutive_losses": 0,
+  "losses": 2,
+  "total_pnl": -11.33826410002564,
+  "last_exit_candle": "2026-10-07 08:00:00+00:00",
+  "consecutive_losses": 1,
   "live_bankroll_at_entry": 15.0,
-  "live_algo_id": "3988248137777950720",
+  "live_algo_id": "",
   "live_stop_px": 83159.2145,
   "struct_stop": 83159.2145,
   "peak_price": 84014.9,
   "mr_target": 0.0,
-  "last_exit_was_stop": false,
+  "last_exit_was_stop": true,
   "recent_pnls": [
     -0.004,
-    0.088
+    0.088,
+    -1.216
   ],
-  "day_date": "2026-09-28",
-  "day_pnl": 0.088,
-  "peak_capital": 1000.8344631506633
+  "day_date": "2026-10-07",
+  "day_pnl": -1.216,
+  "peak_capital": 1000.8344631506633,
+  "perf": {
+    "since": "10/07",
+    "trades": 1,
+    "wins": 0,
+    "usd": -0.1824,
+    "pct_sum": -1.216,
+    "consec_loss": 1,
+    "max_consec_loss": 1
+  }
 }
