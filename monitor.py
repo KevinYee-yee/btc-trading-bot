@@ -469,7 +469,34 @@ def _live_sync_position(portfolio):
             portfolio["entry_price"] = 0.0
             portfolio["entry_time"]  = ""
             save_portfolio(portfolio)
+    elif exchange_qty > threshold and json_qty > threshold and not portfolio.get("live_algo_id"):
+        _live_heal_missing_stop(portfolio, exchange_qty)
     return portfolio
+
+def _live_heal_missing_stop(portfolio, qty):
+    """2026-10-09：持倉中卻沒有交易所止損單（掛單被拒、手動撤銷…）→ 每輪自動補掛。
+    停損價用帳本記錄的價位；若它已不低於現價（掛了也會被拒），改由機器人在K棒收盤時出場並通知一次。"""
+    stop_px = portfolio.get("live_stop_px") or portfolio.get("struct_stop") or 0
+    if STRATEGY == "T" and not stop_px:
+        stop_px = round(portfolio["entry_price"] * (1 - STOP_PCT / 100), 6)
+    try:
+        last = float(live_exchange.fetch_ticker(SYMBOL)["last"])
+    except Exception as e:
+        print(f"  ⚠️ 補掛止損前查價失敗：{e}")
+        return
+    if not stop_px or stop_px >= last * 0.998:
+        if not portfolio.get("heal_warned"):
+            notify(f"⚠️ [{STRAT_KEY}] 持倉沒有交易所止損，且帳本停損價 {stop_px} 已不低於現價 {last}，"
+                   f"無法掛單；改由機器人在 4H 收盤跌破時出場")
+            portfolio["heal_warned"] = True
+        return
+    algo = _live_place_stop(qty, round(stop_px, 6))
+    if algo:
+        portfolio["live_algo_id"] = algo
+        portfolio["live_stop_px"] = stop_px
+        portfolio.pop("heal_warned", None)
+        save_portfolio(portfolio)
+        notify(f"🛡️ [{STRAT_KEY}] 已補掛交易所止損：{qty:.6f} {ASSET} 跌至 {stop_px} 自動賣出")
 
 # ─────────────────────────────────────────────
 # 工具函數
@@ -649,6 +676,8 @@ def get_entry_signal(df, latest):
         if ok and MR_MIN_RR > 0:
             price = latest["close"]
             swing_low  = df["low"].iloc[-(MR_SWING_LOOKBACK + 2):-2].min()
+            if swing_low * (1 - MR_STOP_BUFFER / 100) >= price * 0.997:   # 同 _execute_buy 的停損修正
+                swing_low = min(df["low"].iloc[-(MR_SWING_LOOKBACK + 2):-1].min(), price)
             swing_high = df["high"].iloc[-(MR_SWING_LOOKBACK + 2):-2].max()
             risk   = price - swing_low * (1 - MR_STOP_BUFFER / 100)
             reward = swing_high - price
@@ -913,6 +942,12 @@ def _execute_buy(df, latest, portfolio, price, bb_upper, bb_lower, recent_low,
     if STRATEGY == "MR":
         swing_low = df["low"].iloc[-(MR_SWING_LOOKBACK + 2):-2].min()
         mr_struct_stop = round(swing_low * (1 - MR_STOP_BUFFER / 100), 6)
+        # 2026-10-08 NEAR 真實 bug：急跌 K 棒進場時，價格已跌破「排除最新2根」的前波低點，
+        # 算出的停損(4.787)高於進場價(4.624)，交易所以 51280 拒掛止損 → 持倉裸奔。
+        # 停損必須低於現價：把最新已收盤那根的低點也納入，取兩者較低者
+        if mr_struct_stop >= price * 0.997:
+            low_incl = df["low"].iloc[-(MR_SWING_LOOKBACK + 2):-1].min()
+            mr_struct_stop = round(min(low_incl, price) * (1 - MR_STOP_BUFFER / 100), 6)
         if MR_MIN_RR > 0:
             swing_high = df["high"].iloc[-(MR_SWING_LOOKBACK + 2):-2].max()
             mr_target = round(swing_high, 6)
