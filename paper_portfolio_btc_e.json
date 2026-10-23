@@ -1,13 +1,13 @@
 {
-  "capital": 0.0,
-  "position": 0.011129368167078608,
-  "entry_price": 84097.6,
-  "entry_time": "2026-10-21 00:00:00+00:00",
-  "last_candle": "2026-10-21",
-  "total_trades": 5,
+  "capital": 905.21364829098,
+  "position": 0.0,
+  "entry_price": 0.0,
+  "entry_time": "",
+  "last_candle": "2026-10-22",
+  "total_trades": 6,
   "wins": 1,
-  "losses": 4,
-  "total_pnl": -63.11089447992242,
+  "losses": 5,
+  "total_pnl": -94.78635170901998,
   "stage": 0,
-  "initial_qty": 0.011129368167078608
+  "initial_qty": 0.0
 }
