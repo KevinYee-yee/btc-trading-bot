@@ -3,13 +3,13 @@
   "position": 0.0,
   "entry_price": 0.0,
   "entry_time": "",
-  "last_candle": "2026-11-05 20:00:00+00:00",
+  "last_candle": "2026-11-06 04:00:00+00:00",
   "total_trades": 10,
   "wins": 1,
   "losses": 9,
   "total_pnl": -333.62578224092863,
   "last_exit_candle": "2026-11-04 04:00:00+00:00",
-  "consecutive_losses": 3,
+  "consecutive_losses": 2,
   "peak_price": 0.0,
   "last_exit_was_stop": false
 }
